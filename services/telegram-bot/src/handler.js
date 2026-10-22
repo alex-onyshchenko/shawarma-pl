@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { getConfig } from './config.js';
 
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
@@ -8,9 +7,6 @@ export function createWebhookHandler(readConfig = () => getConfig()) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, { Allow: 'POST' });
     let config;
     try { config = readConfig(); } catch { return json({ error: 'Bot is not configured' }, 503); }
-    const provided = Buffer.from(request.headers.get('x-telegram-bot-api-secret-token') || '');
-    const expected = Buffer.from(config.secret);
-    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return json({ error: 'Unauthorized' }, 401);
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type') || '')) return json({ error: 'JSON required' }, 415);
     if (Number(request.headers.get('content-length') || 0) > 65536) return json({ error: 'Update too large' }, 413);
     let update;
@@ -24,7 +20,7 @@ export function createWebhookHandler(readConfig = () => getConfig()) {
     if (message?.chat?.type !== 'private' || !Number.isSafeInteger(message.chat.id) || message.from?.is_bot || typeof message.text !== 'string') return json({ ok: true });
     const command = message.text.match(/^\/(start|help)(?:@([A-Za-z0-9_]+))?(?:\s[\s\S]*)?$/i);
     if (!command || (command[2] && command[2].toLowerCase() !== config.username.toLowerCase())) return json({ ok: true });
-    // Telegram executes this Bot API method from the authenticated webhook response.
+    // Telegram executes this Bot API method from the webhook response.
     // No polling, database, outbound sendMessage request or bot token is needed here.
     return json({
       method: 'sendMessage',

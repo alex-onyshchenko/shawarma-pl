@@ -11,15 +11,15 @@ export async function registerWebhook(env = process.env, fetcher = fetch) {
   try {
     const health = await fetcher(new URL('/api/health', base), { signal: AbortSignal.timeout(15000) });
     if (!health.ok || (await health.json()).service !== 'telegram-bot') throw new Error();
-    // A no-op update proves the deployed secret matches without sending a message.
+    // A no-op update checks the deployed endpoint without sending a message.
     const check = await fetcher(webhookUrl, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': config.secret },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ update_id: 0 }), signal: AbortSignal.timeout(15000),
     });
     if (!check.ok || (await check.json()).ok !== true) throw new Error();
   } catch { throw new Error('Deployment check failed; verify BOT_PUBLIC_URL, deployed env and webhook access'); }
   await telegramRequest(env.TELEGRAM_BOT_TOKEN, 'setWebhook', {
-    url: webhookUrl, secret_token: config.secret, allowed_updates: ['message'], drop_pending_updates: false,
+    url: webhookUrl, allowed_updates: ['message'], drop_pending_updates: false,
   }, fetcher);
   return { username: config.username, webhookUrl };
 }

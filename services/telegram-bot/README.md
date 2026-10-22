@@ -12,18 +12,11 @@
 | --- | --- |
 | `MINI_APP_URL` | HTTPS-адреса клієнта; зараз `https://shawarma-pl-pe1y.vercel.app/` |
 | `TELEGRAM_BOT_USERNAME` | `shaurmisha_pl_bot`, без `@` |
-| `TELEGRAM_WEBHOOK_SECRET` | Випадковий приватний секрет, 32–256 символів `A-Z a-z 0-9 _ -`; має збігатися локально й у Vercel |
 | `TELEGRAM_BOT_TOKEN` | Приватний токен BotFather; потрібний лише локальному скрипту реєстрації, у runtime функції не використовується |
 | `BOT_PUBLIC_URL` | HTTPS origin **окремого бот-проєкту**, без шляху, наприклад `https://YOUR-BOT-PROJECT.vercel.app`; потрібний скрипту |
 | `HOST`, `PORT` | Локальний сервер, за замовчуванням `127.0.0.1:3005` |
 
-Згенерувати секрет у своєму терміналі:
-
-```bash
-node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.log(randomBytes(32).toString('hex'))"
-```
-
-Скопіюйте результат у приватний `.env.prod` і в серверні змінні Vercel. Токен бота зберігайте у приватному `.env.prod`; не надсилайте його в чат та не додавайте у `VITE_*`.
+Окремий webhook-секрет не використовується. У Vercel достатньо адреси меню та username бота. Токен BotFather потрібний тільки для реєстрації webhook: зберігайте його приватно, не додавайте в Git або `VITE_*`.
 
 ## Деплой на Vercel
 
@@ -41,11 +34,11 @@ node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.
 
 Для Web Standard функцій потрібний увімкнений Fluid compute (стандартний режим нових проєктів Vercel). Публічні статичні файли обмежені каталогом `public`; корінь бот-домену може повертати 404 — перевіряйте `/api/health`.
 
-Додайте для Production `MINI_APP_URL`, `TELEGRAM_BOT_USERNAME` та `TELEGRAM_WEBHOOK_SECRET`. `TELEGRAM_BOT_TOKEN` у Vercel не потрібен: Telegram виконує `sendMessage` з JSON-відповіді на webhook. Токен потрібний лише для локальних викликів `getMe`, `setWebhook` та `getWebhookInfo`.
+Додайте для Production лише `MINI_APP_URL` і `TELEGRAM_BOT_USERNAME`. `TELEGRAM_BOT_TOKEN` у Vercel не потрібен: Telegram виконує `sendMessage` з JSON-відповіді на webhook. Токен потрібний лише для локальних викликів `getMe`, `setWebhook` та `getWebhookInfo`.
 
-Після деплою перевірте `https://YOUR-BOT-PROJECT.vercel.app/api/health`: має повернути `status: ok`, `service: telegram-bot`. Без потрібних налаштувань повертається 503. Адреса `/api/webhook` має бути доступна Telegram без сторінки входу Vercel; захист самого webhook забезпечується перевіркою секретного заголовка.
+Після деплою перевірте `https://YOUR-BOT-PROJECT.vercel.app/api/health`: має повернути `status: ok`, `service: telegram-bot`. Без потрібних налаштувань повертається 503. Адреса `/api/webhook` має бути доступна Telegram без сторінки входу Vercel. Перевірки джерела повідомлення у webhook немає.
 
-Заповніть `BOT_PUBLIC_URL`, `TELEGRAM_BOT_TOKEN` і такий самий `TELEGRAM_WEBHOOK_SECRET` у локальному `services/telegram-bot/.env.prod`, потім:
+Заповніть `BOT_PUBLIC_URL` і `TELEGRAM_BOT_TOKEN` у приватному `services/telegram-bot/.env.prod`, потім:
 
 ```bash
 cd services/telegram-bot
@@ -54,9 +47,9 @@ npm run webhook:prod
 npm run webhook:info
 ```
 
-Реєстрація перевіряє відповідність username токену, health endpoint та секрет на розгорнутій функції через no-op update. Лише після цього викликає `setWebhook`. Перевірка не надсилає повідомлень. Pending updates не видаляються, тому після реєстрації Telegram може доставити попередні команди за останні 24 години.
+Реєстрація перевіряє відповідність username токену, health endpoint та доступність webhook через no-op update. Лише після цього викликає `setWebhook`. Перевірка не надсилає повідомлень. Pending updates не видаляються, тому після реєстрації Telegram може доставити попередні команди за останні 24 години.
 
-Один бот має один webhook: `webhook:dev` замінить production endpoint, якщо в dev використано той самий токен. Для ізольованих тестів використовуйте іншого Telegram-бота й окремі dev-секрети.
+Один бот має один webhook: `webhook:dev` замінить production endpoint, якщо в dev використано той самий токен. Для ізольованих тестів використовуйте іншого Telegram-бота й окремий dev-токен.
 
 Після реєстрації відкрийте @shaurmisha_pl_bot, надішліть `/start` і натисніть «Відкрити меню». Поточний клієнт — автономний перегляд меню: замовлення та сповіщення про них цей сервіс не реалізує.
 
@@ -81,8 +74,8 @@ APP_ENV=dev docker compose --profile bot up -d --build telegram-bot
 
 ## Контракт і обмеження
 
-Webhook приймає лише POST JSON до 64 KiB, перевіряє `X-Telegram-Bot-Api-Secret-Token` у сталий час, відповідає 401 без секрету. Групи, edited updates, повідомлення ботів та інші команди ігноруються з HTTP 200. Секрети, токени, тексти повідомлень і chat ID не логуються.
+Webhook приймає POST JSON до 64 KiB без авторизації та без перевірки походження запиту. Заголовок `X-Telegram-Bot-Api-Secret-Token`, якщо він залишився від старої реєстрації, ігнорується. Групи, edited updates, повідомлення ботів та інші команди ігноруються з HTTP 200. Токени, тексти повідомлень і chat ID не логуються.
 
-Відповідь — Telegram Bot API `sendMessage` у тілі webhook, без окремого мережевого виклику. Telegram не повертає результат такого `sendMessage`, тому для перевірки доставки треба натиснути `/start` у реальному чаті. Сервіс не зберігає `update_id`; при повторній доставці update можливе повторне привітання. Персональні дані та замовлення не зберігаються.
+Відповідь — Telegram Bot API `sendMessage` у тілі webhook, без окремого мережевого виклику. Звичайний сторонній POST отримує JSON-відповідь і сам по собі не надсилає повідомлення в Telegram. Цей endpoint лише формує публічне привітання; він не використовується для замовлень, оплат чи персональних даних. Telegram не повертає результат такого `sendMessage`, тому для перевірки доставки треба натиснути `/start` у реальному чаті. Сервіс не зберігає `update_id`; при повторній доставці update можливе повторне привітання. Персональні дані та замовлення не зберігаються.
 
 Джерела: [Telegram webhook responses](https://core.telegram.org/bots/api#making-requests-when-getting-updates), [setWebhook](https://core.telegram.org/bots/api#setwebhook), [Vercel Node.js Functions](https://vercel.com/docs/functions/runtimes/node-js).

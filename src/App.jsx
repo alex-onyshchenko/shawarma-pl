@@ -9,6 +9,7 @@ import ModifierModal from './components/ModifierModal';
 import CheckoutView from './components/CheckoutView';
 import OrderSuccessModal from './components/OrderSuccessModal';
 import AboutModal from './components/AboutModal';
+import { orderSync } from './utils/orderSync';
 
 export default function App() {
   const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].name);
@@ -204,6 +205,11 @@ export default function App() {
       status: 'new',
       orderType: orderData.deliveryType,
       customerName: user?.first_name ? `${user.first_name} (Telegram)` : 'Клієнт Telegram',
+      phoneNumber: orderData.phoneNumber,
+      totalPrice: orderData.finalTotal,
+      deliveryAddress: orderData.deliveryAddress,
+      selectedLocation: orderData.selectedLocation,
+      orderComment: orderData.orderComment,
       items: orderData.cart.map(item => ({
         name: item.product.name,
         qty: item.quantity,
@@ -215,11 +221,10 @@ export default function App() {
       }))
     };
 
-    try {
-      localStorage.setItem('shawarma_new_order', JSON.stringify(kdsOrder));
-    } catch (e) {}
+    // Broadcast across all connected KDS screens
+    orderSync.createOrder(kdsOrder);
 
-    setLastPlacedOrder({ ...orderData, orderId: kdsOrder.id });
+    setLastPlacedOrder(kdsOrder);
     setCart([]);
     setView('order-status');
   };

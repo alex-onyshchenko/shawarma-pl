@@ -20,6 +20,7 @@ import {
   X
 } from 'lucide-react';
 import { kdsSound, requestScreenWakeLock, releaseScreenWakeLock } from './kdsSound';
+import { orderSync } from '../utils/orderSync';
 
 // Initial orders from prompt with timestamp calculation for live ticking
 const INITIAL_ORDERS = [
@@ -120,19 +121,60 @@ export default function KitchenDisplayApp() {
     };
   }, []);
 
-  // Sync with cross-origin broadcast if available or poll local sync
+  // Real-time synchronization with server and client apps
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'shawarma_new_order' && e.newValue) {
-        try {
-          const incoming = JSON.parse(e.newValue);
-          addNewOrder(incoming);
-        } catch (err) {}
+    // 1. Fetch initial orders
+    orderSync.getOrders().then(data => {
+      if (data?.orders) {
+        setOrders(data.orders);
+        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
       }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+    });
+
+    // 2. Subscribe to real-time events via SSE + broadcast
+    const unsubscribe = orderSync.subscribe({
+      onInit: (data) => {
+        if (data.orders) setOrders(data.orders);
+        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
+      },
+      onNewOrder: (newOrder) => {
+        setOrders(prev => {
+          if (prev.some(o => o.id === newOrder.id)) return prev;
+          return [newOrder, ...prev];
+        });
+
+        if (isSoundEnabled) {
+          kdsSound.playNewOrder();
+        }
+
+        setNewOrderAlert(`Нове замовлення #${newOrder.id}!`);
+        setTimeout(() => setNewOrderAlert(null), 4000);
+      },
+      onStatusUpdate: ({ id, status, order }) => {
+        if (status === 'archived') {
+          setOrders(prev => prev.filter(o => o.id !== id));
+          if (order) {
+            setArchivedOrders(prev => [order, ...prev.filter(o => o.id !== id)]);
+          }
+        } else {
+          setOrders(prev => {
+            const exists = prev.some(o => o.id === id);
+            if (exists) {
+              return prev.map(o => (o.id === id ? { ...o, status } : o));
+            } else if (order) {
+              return [order, ...prev];
+            }
+            return prev;
+          });
+        }
+      },
+      onReset: (data) => {
+        if (data.orders) setOrders(data.orders);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isSoundEnabled]);
 
   // Advance order status
   const advanceOrder = (orderId, currentStatus) => {
@@ -143,10 +185,14 @@ export default function KitchenDisplayApp() {
     const nextStatus =
       currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived';
 
+    // Optimistic local update
     if (nextStatus === 'archived') {
       const completed = orders.find(o => o.id === orderId);
       if (completed) {
-        setArchivedOrders(prev => [{ ...completed, completedAt: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) }, ...prev]);
+        setArchivedOrders(prev => [
+          { ...completed, completedAt: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) },
+          ...prev
+        ]);
       }
       setOrders(prev => prev.filter(o => o.id !== orderId));
     } else {
@@ -154,6 +200,9 @@ export default function KitchenDisplayApp() {
         prev.map(o => (o.id === orderId ? { ...o, status: nextStatus } : o))
       );
     }
+
+    // Sync across all connected apps
+    orderSync.updateStatus(orderId, nextStatus);
   };
 
   // Revert order status (Undo accidental tap)
@@ -163,6 +212,7 @@ export default function KitchenDisplayApp() {
     setOrders(prev =>
       prev.map(o => (o.id === orderId ? { ...o, status: prevStatus } : o))
     );
+    orderSync.updateStatus(orderId, prevStatus);
   };
 
   // Add new order (either demo or incoming from customer app)
@@ -213,16 +263,18 @@ export default function KitchenDisplayApp() {
       items: [randomDish]
     };
 
+    // Optimistic local add
     setOrders(prev => [createdOrder, ...prev]);
 
-    // Play chime sound
     if (isSoundEnabled) {
       kdsSound.playNewOrder();
     }
 
-    // Flash visual banner
     setNewOrderAlert(`Нове замовлення #${orderId}!`);
     setTimeout(() => setNewOrderAlert(null), 3500);
+
+    // Broadcast through sync server so all tabs & screens see it
+    orderSync.createOrder(createdOrder);
   };
 
   // Toggle fullscreen mode (Kiosk)

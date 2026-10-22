@@ -37,7 +37,7 @@ export default function TelegramHeader({
           <div className="flex items-center gap-1.5 text-zinc-300">
             <span className="text-[10px]">5G</span>
             <div className="w-5 h-2.5 border border-zinc-400 rounded-sm p-0.5 flex items-center">
-              <div className="h-full w-3/4 bg-white rounded-2xs" />
+              <div className="h-full w-3/4 bg-white rounded-xs" />
             </div>
           </div>
         </div>

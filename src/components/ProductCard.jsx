@@ -23,7 +23,7 @@ export default function ProductCard({ product, onSelect, onQuickAdd, inCartCount
 
         {/* Tag badge (e.g. Хіт, Топ) */}
         {product.tag && (
-          <span className="absolute top-1.5 left-1.5 bg-orange-500/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-sm backdrop-blur-xs">
+          <span className="absolute top-1.5 left-1.5 bg-orange-500/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-sm backdrop-blur-sm">
             {product.tag}
           </span>
         )}

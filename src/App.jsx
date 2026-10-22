@@ -256,7 +256,7 @@ export default function App() {
       <div
         className={`w-full transition-all duration-300 relative flex flex-col bg-zinc-950 min-h-screen ${
           isMockupMode
-            ? 'max-w-md md:rounded-[40px] md:shadow-2xl md:border-4 md:border-zinc-800/80 md:min-h-[850px] md:max-h-[92vh] md:overflow-hidden'
+            ? 'max-w-md md:my-3 md:rounded-[36px] md:shadow-2xl md:border-2 md:border-zinc-800'
             : 'max-w-2xl border-x border-zinc-900'
         }`}
       >
@@ -375,9 +375,9 @@ export default function App() {
             />
           )}
 
-          {view === 'order-status' && lastPlacedOrder && (
+          {view === 'order-status' && (
             <OrderSuccessModal
-              order={lastPlacedOrder}
+              order={lastPlacedOrder || { id: '1044', finalTotal: 180, deliveryType: 'pickup', items: [] }}
               onReset={handleResetToMenu}
             />
           )}
@@ -385,7 +385,7 @@ export default function App() {
 
         {/* Floating Bottom Cart Bar for Menu View */}
         {view === 'menu' && cartItemsCount > 0 && (
-          <div className="absolute bottom-4 left-4 right-4 z-30 animate-slide-up">
+          <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto z-30 animate-slide-up">
             <button
               onClick={() => {
                 tg.haptic.impact('medium');

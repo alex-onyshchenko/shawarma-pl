@@ -7,10 +7,10 @@
     <meta name="theme-color" content="#09090b" />
     <title>Шаурма на Вугіллі — Telegram Mini App</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌯</text></svg>" />
-    <!-- Telegram WebApp SDK -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Non-blocking Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
   </head>
-  <body class="bg-zinc-950 text-white antialiased select-none overflow-x-hidden">
+  <body class="bg-zinc-950 text-white antialiased select-none overflow-x-hidden min-h-screen">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

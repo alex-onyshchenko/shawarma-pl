@@ -1,100 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Trash2,
   Plus,
   Minus,
   ShoppingBag,
-  MapPin,
   Clock,
-  Sparkles,
   ShieldCheck,
   Check,
-  Utensils,
-  ChevronRight,
   CreditCard,
-  Banknote,
-  Send
+  Banknote
 } from 'lucide-react';
-import { PICKUP_LOCATIONS } from '../data/menuData';
 import { tg } from '../utils/telegram';
+import ProductImage from './ProductImage';
+import { orderSync } from '../utils/orderSync';
+import { getSlots, formatTime, normalizeTiming, ceilQuarter, MINUTE } from '../utils/timing';
 
 export default function CheckoutView({
   cart,
+  point,
   onUpdateQuantity,
   onRemoveItem,
   onBackToMenu,
   onPlaceOrder,
   user
 }) {
-  const [deliveryType, setDeliveryType] = useState('pickup'); // 'pickup' | 'delivery'
-  const [selectedLocation, setSelectedLocation] = useState(PICKUP_LOCATIONS[0]);
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('+380 (97) 123-45-67');
-  const [cutlery, setCutlery] = useState(true);
-  const [promoCode, setPromoCode] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState(null);
-  const [promoError, setPromoError] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('telegram'); // 'telegram' | 'card' | 'cash'
-  const [orderComment, setOrderComment] = useState('');
+  const deliveryType = 'pickup';
+  const selectedLocation = point ? { id: point.id, name: point.address, metro: point.metro } : null;
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [napkins, setNapkins] = useState(true);
+  const paymentMethod = 'cash';
+
+  const [timingMode, setTimingMode] = useState('asap');
+  const [requestedReadyAt, setRequestedReadyAt] = useState('');
+  const [availability, setAvailability] = useState(null);
+  const [clock, setClock] = useState(Date.now());
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const submitting = useRef(false);
+
+  useEffect(() => {
+    const unsubscribe = orderSync.subscribe({
+      onInit: data => setAvailability(data.availability),
+      onAvailability: setAvailability,
+    });
+    const refreshClock = () => setClock(Date.now());
+    const timer = setInterval(refreshClock, 15000);
+    window.addEventListener('focus', refreshClock);
+    document.addEventListener('visibilitychange', refreshClock);
+    return () => { unsubscribe(); clearInterval(timer); window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); };
+  }, []);
+
+  const slots = availability ? getSlots(clock, availability) : [];
+  const selectedSlot = requestedReadyAt || String(slots[0] || '');
+  const hasUnavailableItems = cart.some(item => item.unavailableReason);
+  const canSubmit = !hasUnavailableItems && availability?.acceptingOrders && (timingMode === 'scheduled' ? slots.length > 0 : availability.asapAvailable);
 
   // Subtotal calculation
-  const subtotal = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+  const subtotal = Math.round(cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0) * 100) / 100;
 
-  // Discount calculation
-  let discount = 0;
-  if (deliveryType === 'pickup') {
-    discount += Math.round(subtotal * 0.1); // 10% discount for pickup
-  }
-  if (appliedPromo) {
-    discount += Math.round(subtotal * appliedPromo.percent / 100);
-  }
+  const discount = Math.round(subtotal * (point?.pickupDiscountPercent ?? 0) / 100);
+  const deliveryFee = 0;
+  const finalTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
 
-  // Delivery fee
-  const deliveryFee = deliveryType === 'delivery' ? (subtotal >= 350 ? 0 : 50) : 0;
-
-  const finalTotal = Math.max(0, subtotal - discount + deliveryFee);
-
-  const handleApplyPromo = () => {
-    tg.haptic.impact('light');
-    const code = promoCode.trim().toUpperCase();
-    if (code === 'LAVASH' || code === 'LAVASH10' || code === 'SHAVA10') {
-      setAppliedPromo({ code, percent: 10 });
-      setPromoError('');
-      tg.haptic.success();
-    } else if (code === 'VUHILLYA' || code === 'TOP') {
-      setAppliedPromo({ code, percent: 15 });
-      setPromoError('');
-      tg.haptic.success();
-    } else {
-      setPromoError('Недійсний промокод. Спробуйте LAVASH10 або VUHILLYA');
-      setAppliedPromo(null);
-      tg.haptic.warning();
-    }
-  };
-
-  const handleSubmitOrder = (e) => {
+  const handleSubmitOrder = async (e) => {
     e.preventDefault();
-    if (deliveryType === 'delivery' && !deliveryAddress.trim()) {
-      alert('Будь ласка, вкажіть адресу доставки');
-      return;
+    if (submitting.current) return;
+    setSubmitError('');
+    submitting.current = true;
+    setIsSubmitting(true);
+    try {
+      const current = await orderSync.getAvailability();
+      setAvailability(current);
+      if (!current.acceptingOrders) throw new Error(current.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено');
+      const timing = normalizeTiming({ timingMode, requestedReadyAt: Number(selectedSlot) }, Date.now(), current);
+      if (timingMode === 'scheduled') setRequestedReadyAt(String(timing.baselineReadyAt));
+      await onPlaceOrder({
+        cart, subtotal, discount, deliveryFee, finalTotal, deliveryType,
+        selectedLocation, phoneNumber: phoneNumber.trim(), napkins, paymentMethod,
+        timingMode, requestedReadyAt: timing.requestedReadyAt,
+      });
+    } catch (error) {
+      setSubmitError(error.message || 'Не вдалося оформити замовлення. Спробуйте ще раз');
+    } finally {
+      submitting.current = false;
+      setIsSubmitting(false);
     }
-
-    tg.haptic.impact('heavy');
-    onPlaceOrder({
-      cart,
-      subtotal,
-      discount,
-      deliveryFee,
-      finalTotal,
-      deliveryType,
-      selectedLocation: deliveryType === 'pickup' ? selectedLocation : null,
-      deliveryAddress: deliveryType === 'delivery' ? deliveryAddress : null,
-      phoneNumber,
-      cutlery,
-      paymentMethod,
-      orderComment,
-      appliedPromo
-    });
   };
 
   if (cart.length === 0) {
@@ -105,7 +95,7 @@ export default function CheckoutView({
         </div>
         <h2 className="text-xl font-bold text-white mb-2">Кошик порожній</h2>
         <p className="text-zinc-400 text-sm max-w-xs mb-6">
-          Ви ще не додали жодної соковитої шаурми або смачного снеку до замовлення.
+          Додайте шаурму або напої з меню.
         </p>
         <button
           onClick={onBackToMenu}
@@ -118,7 +108,7 @@ export default function CheckoutView({
   }
 
   return (
-    <div className="p-4 pb-28 space-y-4 animate-fade-in max-w-md mx-auto">
+    <div className="p-4 pb-28 space-y-4 animate-fade-in max-w-2xl mx-auto">
       {/* Title */}
       <div className="flex items-center justify-between">
         <div>
@@ -141,12 +131,13 @@ export default function CheckoutView({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-zinc-800 border border-zinc-700/50 flex items-center justify-center text-2xl shrink-0">
-                  {item.product.emoji}
-                </div>
+                <ProductImage product={item.product} className="w-12" />
                 <div>
                   <h4 className="font-bold text-white text-sm leading-tight">
                     {item.product.name}
+                    {item.size && <span className="block text-xs text-zinc-400 mt-1">{item.size.name} · {item.size.weight}</span>}
+                    {item.toastingLevel && <span className="block text-xs text-orange-300 mt-1">Підсмажити лаваш: {item.toastingLevel === 'strong' ? 'сильніше' : item.toastingLevel === 'light' ? 'слабіше' : 'звичайна піджарка'}</span>}
+                  {item.unavailableReason && <span className="block text-xs text-red-300">{item.unavailableReason}</span>}
                   </h4>
                   <div className="text-xs text-zinc-400 mt-0.5">
                     {item.unitPrice} ₴ / шт
@@ -157,7 +148,7 @@ export default function CheckoutView({
               {/* Price */}
               <div className="text-right">
                 <span className="font-bold text-white text-base">
-                  {item.unitPrice * item.quantity} ₴
+                  {Math.round(item.unitPrice * item.quantity * 100) / 100} ₴
                 </span>
               </div>
             </div>
@@ -247,107 +238,28 @@ export default function CheckoutView({
       {/* Delivery / Pickup Segmented Control */}
       <div className="bg-zinc-900 rounded-2xl p-3 border border-zinc-800/80 space-y-3">
         <h3 className="font-bold text-sm text-white">Спосіб отримання</h3>
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setDeliveryType('pickup');
-            }}
-            className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              deliveryType === 'pickup'
-                ? 'bg-orange-500 text-white shadow-md'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span>🚶 Самовивіз</span>
-            <span className="bg-black/30 text-[10px] px-1.5 py-0.2 rounded-full">-10%</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setDeliveryType('delivery');
-            }}
-            className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              deliveryType === 'delivery'
-                ? 'bg-orange-500 text-white shadow-md'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <span>🛵 Доставка</span>
-          </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" aria-pressed="true" className="py-3 px-3 rounded-xl text-xs font-bold bg-orange-500 text-white">🚶 Самовивіз</button>
+          <button type="button" disabled className="py-3 px-3 rounded-xl text-xs font-bold border border-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed">🛵 Доставка</button>
         </div>
-
-        {/* Pickup Location Selector */}
-        {deliveryType === 'pickup' ? (
-          <div className="space-y-2 pt-1">
-            <label className="text-xs text-zinc-400 block font-medium">
-              Оберіть заклад для самовивозу:
-            </label>
-            <div className="space-y-1.5">
-              {PICKUP_LOCATIONS.map(loc => {
-                const isSelected = selectedLocation.id === loc.id;
-                return (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => {
-                      tg.haptic.selection();
-                      setSelectedLocation(loc);
-                    }}
-                    className={`w-full p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
-                      isSelected
-                        ? 'border-orange-500 bg-orange-500/10 ring-1 ring-orange-500'
-                        : 'border-zinc-800 bg-zinc-800/40 text-zinc-300 hover:border-zinc-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <MapPin size={16} className={isSelected ? 'text-orange-500' : 'text-zinc-400'} />
-                      <div>
-                        <div className="text-xs font-semibold text-white">{loc.name}</div>
-                        <div className="text-[11px] text-zinc-400">{loc.metro}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] text-orange-400 font-medium">
-                      <Clock size={12} />
-                      <span>{loc.time}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+        <div className="space-y-2 pt-1">
+          <p className="text-xs text-zinc-400">Самовивіз із закладу:</p>
+          <div className="rounded-xl border border-orange-500/50 bg-orange-500/10 p-3 text-sm">
+            <strong className="block">{point?.name}</strong><span>{point?.address}</span>
+            {point?.metro && <p className="text-xs text-zinc-400 mt-1">{point.metro}</p>}
           </div>
-        ) : (
-          /* Delivery Address Form */
-          <div className="space-y-2 pt-1">
-            <label className="text-xs text-zinc-400 block font-medium">
-              Адреса доставки у Києві:
-            </label>
-            <input
-              type="text"
-              value={deliveryAddress}
-              onChange={e => setDeliveryAddress(e.target.value)}
-              placeholder="Вулиця, номер будинку, квартира / офіс"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-orange-500 transition-colors"
-            />
-            <div className="flex justify-between text-[11px] text-zinc-400">
-              <span>Доставка кур'єром за 35-45 хв</span>
-              <span className="text-emerald-400">
-                {subtotal >= 350 ? 'Безкоштовно від 350 ₴' : '+50 ₴ до замовлення'}
-              </span>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Contact Phone */}
         <div className="pt-2 border-t border-zinc-800/60">
-          <label className="text-xs text-zinc-400 block mb-1 font-medium">
-            Номер телефону для зв'язку:
+          <label htmlFor="contact-phone" className="text-xs text-zinc-400 block mb-1 font-medium">
+            Номер телефону (необов’язково):
           </label>
           <input
+            id="contact-phone"
             type="tel"
+            placeholder="+380…"
+            autoComplete="tel"
             value={phoneNumber}
             onChange={e => setPhoneNumber(e.target.value)}
             className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-hidden focus:border-orange-500"
@@ -355,90 +267,38 @@ export default function CheckoutView({
         </div>
       </div>
 
-      {/* Extras: Cutlery & Comment */}
-      <div className="bg-zinc-900 rounded-2xl p-3 border border-zinc-800/80 space-y-3">
-        {/* Cutlery toggle */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Utensils size={16} className="text-orange-400" />
-            <div>
-              <span className="text-xs font-semibold text-white block">Серветки та прилади</span>
-              <span className="text-[11px] text-zinc-400 block">Покласти комплект до замовлення</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setCutlery(!cutlery);
-            }}
-            className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-              cutlery ? 'bg-orange-500' : 'bg-zinc-800'
-            }`}
-          >
-            <div
-              className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                cutlery ? 'translate-x-5' : 'translate-x-0'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Order Comment */}
-        <div className="pt-2 border-t border-zinc-800/60">
-          <input
-            type="text"
-            value={orderComment}
-            onChange={e => setOrderComment(e.target.value)}
-            placeholder="Коментар до замовлення (наприклад: домофон #34)"
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-orange-500"
-          />
-        </div>
-      </div>
-
-      {/* Promo Code Card */}
-      <div className="bg-zinc-900 rounded-2xl p-3 border border-zinc-800/80">
-        <label className="text-xs font-semibold text-white block mb-1.5 flex items-center gap-1.5">
-          <Sparkles size={14} className="text-amber-400" />
-          <span>Промокод на знижку</span>
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={promoCode}
-            onChange={e => setPromoCode(e.target.value)}
-            placeholder="Введіть код (напр. LAVASH10)"
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs uppercase text-white placeholder-zinc-500 focus:outline-hidden focus:border-orange-500"
-          />
-          <button
-            type="button"
-            onClick={handleApplyPromo}
-            className="bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-white text-xs font-semibold px-3 py-2 rounded-xl border border-zinc-700 transition-colors"
-          >
-            Застосувати
-          </button>
-        </div>
-
-        {appliedPromo && (
-          <div className="mt-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2 flex items-center justify-between">
-            <span>🎉 Промокод {appliedPromo.code} активовано (-{appliedPromo.percent}%)</span>
-            <button
-              onClick={() => {
-                setAppliedPromo(null);
-                setPromoCode('');
-              }}
-              className="text-zinc-400 hover:text-white ml-2"
-            >
-              ×
+      <section className="bg-zinc-900 rounded-2xl p-4 border border-zinc-800 space-y-3" aria-label="Час видачі">
+        <h3 className="font-bold flex items-center gap-2"><Clock size={18} className="text-orange-400" /> Коли приготувати?</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {[['asap', 'Якнайшвидше'], ['scheduled', 'На точний час']].map(([mode, label]) => (
+            <button key={mode} type="button" aria-pressed={timingMode === mode} onClick={() => { setTimingMode(mode); setClock(Date.now()); }}
+              className={`rounded-xl p-3 text-sm font-bold border ${timingMode === mode ? 'bg-orange-500/15 border-orange-500 text-orange-300' : 'border-zinc-700 text-zinc-300'}`}>
+              {label}
             </button>
+          ))}
+        </div>
+        {timingMode === 'asap' ? <div className="space-y-1"><p className="text-xs text-zinc-400">Орієнтовний час приготування — від 15 хвилин</p>{availability?.asapAvailable && <p className="text-sm font-semibold text-orange-300">Найближча видача: {formatTime(ceilQuarter(clock + 15 * MINUTE), availability.timeZone)}</p>}</div> : (
+          <div>
+            <label htmlFor="ready-time" className="block text-xs text-zinc-400 mb-2">Сьогодні · місцевий час</label>
+            <select id="ready-time" value={selectedSlot} onChange={event => setRequestedReadyAt(event.target.value)}
+              className="w-full rounded-xl bg-zinc-950 border border-zinc-700 p-3 text-white">
+              {requestedReadyAt && !slots.includes(Number(requestedReadyAt)) && <option value={requestedReadyAt}>{formatTime(Number(requestedReadyAt), availability?.timeZone)} — буде оновлено перед оформленням</option>}
+              {!slots.length && !requestedReadyAt && <option value="">Сьогодні немає доступних слотів</option>}
+              {slots.map(slot => <option key={slot} value={slot}>{formatTime(slot, availability?.timeZone)}</option>)}
+            </select>
+            <p className="text-xs text-zinc-400 mt-2">Якщо час стане неактуальним, автоматично оберемо найближчий доступний слот.</p>
           </div>
         )}
+        {!availability && <p className="text-xs text-amber-300">Перевіряємо доступність кухні…</p>}
+        {availability && !availability.acceptingOrders && <p role="status" className="text-sm text-amber-300">{availability.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено.' : 'Кафе зачинено. Прийом нових замовлень зупинено.'}</p>}
+        {availability?.acceptingOrders && !canSubmit && <p role="status" className="text-xs text-amber-300">{timingMode === 'asap' && slots.length ? 'На зараз недоступно. Оберіть точний час.' : 'Сьогодні прийом замовлень завершено.'}</p>}
+      </section>
 
-        {promoError && (
-          <div className="mt-2 text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg p-2">
-            {promoError}
-          </div>
-        )}
+      <div className="bg-zinc-900 rounded-2xl p-3 border border-zinc-800/80 flex items-center justify-between">
+        <div><span className="text-sm font-semibold text-white block">Додати серветки</span><span className="text-xs text-zinc-400">До вашого замовлення</span></div>
+        <button type="button" role="switch" aria-label="Додати серветки" aria-checked={napkins} onClick={() => { tg.haptic.selection(); setNapkins(!napkins); }} className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${napkins ? 'bg-orange-500' : 'bg-zinc-800'}`}>
+          <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${napkins ? 'translate-x-5' : 'translate-x-0'}`} />
+        </button>
       </div>
 
       {/* Payment Method Selector */}
@@ -447,53 +307,15 @@ export default function CheckoutView({
           <CreditCard size={15} className="text-sky-400" />
           <span>Спосіб оплати</span>
         </h3>
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setPaymentMethod('telegram');
-            }}
-            className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center gap-1 ${
-              paymentMethod === 'telegram'
-                ? 'border-sky-500 bg-sky-500/10 text-sky-400 ring-1 ring-sky-500'
-                : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:border-zinc-700'
-            }`}
-          >
-            <Send size={16} className="text-sky-400" />
-            <span className="text-[11px] font-semibold leading-tight">Telegram Pay</span>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" aria-pressed="true" className="p-3 rounded-xl border border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500 flex flex-col items-center gap-1">
+            <Banknote size={18} />
+            <span className="text-xs font-semibold">При отриманні</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setPaymentMethod('card');
-            }}
-            className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center gap-1 ${
-              paymentMethod === 'card'
-                ? 'border-orange-500 bg-orange-500/10 text-orange-400 ring-1 ring-orange-500'
-                : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:border-zinc-700'
-            }`}
-          >
-            <CreditCard size={16} className="text-orange-400" />
-            <span className="text-[11px] font-semibold leading-tight">Картка онлайн</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              tg.haptic.selection();
-              setPaymentMethod('cash');
-            }}
-            className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center gap-1 ${
-              paymentMethod === 'cash'
-                ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500'
-                : 'border-zinc-800 bg-zinc-800/40 text-zinc-400 hover:border-zinc-700'
-            }`}
-          >
-            <Banknote size={16} className="text-emerald-400" />
-            <span className="text-[11px] font-semibold leading-tight">При отриманні</span>
+          <button type="button" disabled className="p-3 rounded-xl border border-zinc-800 bg-zinc-800/40 text-zinc-500 opacity-50 cursor-not-allowed flex flex-col items-center gap-1">
+            <CreditCard size={18} />
+            <span className="text-xs font-semibold">Картка онлайн</span>
+            <span className="text-[10px]">Незабаром</span>
           </button>
         </div>
       </div>
@@ -507,21 +329,10 @@ export default function CheckoutView({
 
         {discount > 0 && (
           <div className="flex justify-between items-center text-emerald-400">
-            <span>Знижка {deliveryType === 'pickup' ? '(самовивіз 10%)' : ''}</span>
+            <span>Знижка {deliveryType === 'pickup' ? `(самовивіз ${point?.pickupDiscountPercent ?? 0}%)` : ''}</span>
             <span>-{discount} ₴</span>
           </div>
         )}
-
-        <div className="flex justify-between items-center text-zinc-400">
-          <span>Доставка</span>
-          <span>
-            {deliveryFee === 0 ? (
-              <span className="text-emerald-400 font-medium">Безкоштовно</span>
-            ) : (
-              `${deliveryFee} ₴`
-            )}
-          </span>
-        </div>
 
         <div className="h-px bg-zinc-800 my-1" />
 
@@ -531,20 +342,20 @@ export default function CheckoutView({
         </div>
       </div>
 
+      <p className="text-xs text-zinc-400">Оплата при отриманні замовлення. Telegram-повідомлення поки імітуємо.</p>
+      {hasUnavailableItems && <p role="alert" className="text-sm text-red-300">Деякі позиції недоступні. Видаліть їх або оберіть склад заново.</p>}
+      {submitError && <p role="alert" className="rounded-xl border border-red-700 bg-red-950 p-3 text-sm text-red-200">{submitError}</p>}
       {/* Sticky Native-like Telegram MainButton */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800/80 z-30">
+      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto safe-bottom p-4 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800/80 z-30">
         <button
           onClick={handleSubmitOrder}
-          className="w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold py-4 px-6 rounded-2xl shadow-xl shadow-orange-500/25 flex items-center justify-between transition-transform active:scale-[0.98]"
+          disabled={isSubmitting || !canSubmit}
+          className="disabled:opacity-50 disabled:cursor-not-allowed w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold py-4 px-6 rounded-2xl shadow-xl shadow-orange-500/25 flex items-center justify-between transition-transform active:scale-[0.98]"
         >
           <div className="flex items-center gap-2">
             <ShieldCheck size={20} className="text-amber-200" />
             <span className="text-base sm:text-lg">
-              {paymentMethod === 'telegram'
-                ? 'Оплатити через Telegram'
-                : paymentMethod === 'card'
-                ? 'Оплатити карткою'
-                : 'Підтвердити замовлення'}
+              {isSubmitting ? 'Оформлюємо…' : 'Підтвердити замовлення'}
             </span>
           </div>
           <span className="bg-black/25 px-3 py-1 rounded-xl text-base font-bold">

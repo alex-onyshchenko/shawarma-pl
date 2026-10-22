@@ -1,185 +1,54 @@
-/** REST and SSE transport for the independently deployed sync service. */
-function getBaseUrl() {
-  return (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/+$/, '');
+const baseUrl = () => (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/+$/, '');
+
+async function request(path, { method = 'GET', body, token } = {}) {
+  const response = await fetch(`${baseUrl()}${path}`, {
+    method,
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error || 'Не вдалося виконати запит');
+    Object.assign(error, { code: data.code, status: response.status, readyAt: data.readyAt });
+    throw error;
+  }
+  return data;
 }
 
-let broadcastChannel = null;
-try {
-  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-    broadcastChannel = new BroadcastChannel('shawarma_realtime_sync');
-  }
-} catch (e) {}
-
 export const orderSync = {
-  // Fetch current orders through the configured API endpoint.
-  async getOrders() {
-    const base = getBaseUrl();
-    const urls = [`${base}/api/orders`];
-
-    for (const url of urls) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) {
-          return await res.json();
-        }
-      } catch (err) {
-        // try next
-      }
-    }
-    return null;
+  getOrders: () => request('/api/orders'),
+  getMenu: () => request('/api/menu'),
+  getAvailability: () => request('/api/availability'),
+  async createOrder(order) { return (await request('/api/orders', { method: 'POST', body: order })).order; },
+  async createManualOrder(order) { return (await request('/api/kitchen/orders', { method: 'POST', body: order })).order; },
+  async acceptOrder(id, delayMinutes) {
+    return (await request(`/api/orders/${encodeURIComponent(id)}/accept`, { method: 'POST', body: { delayMinutes } })).order;
   },
-
-  // Send a new order (from customer or demo button)
-  async createOrder(order) {
-    console.log('[orderSync] 🚀 Sending new order to kitchen:', order);
-    const base = getBaseUrl();
-    const urls = [`${base}/api/orders`];
-    let sentSuccess = false;
-
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(order)
-        });
-        if (res.ok) {
-          const data = await res.json();
-          console.log('[orderSync] ✅ Order accepted by server:', data);
-          sentSuccess = true;
-          return data.order || order;
-        }
-      } catch (e) {
-        // try next
-      }
-    }
-
-    if (!sentSuccess) {
-      console.warn('[orderSync] Server request failed, using local cross-tab fallback');
-    }
-
-    // Local broadcast fallback
-    if (broadcastChannel) {
-      broadcastChannel.postMessage({ type: 'new_order', order });
-    }
-    try {
-      localStorage.setItem('shawarma_new_order_event', JSON.stringify({ order, timestamp: Date.now() }));
-    } catch (e) {}
-
-    return order;
+  async updateStatus(id, status, options = {}) {
+    return (await request(`/api/orders/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: { status, ...options } })).order;
   },
-
-  // Update order status (from KDS: new -> cooking -> ready -> archived)
-  async updateStatus(orderId, status) {
-    console.log(`[orderSync] 🔄 Updating order #${orderId} -> ${status}`);
-    const base = getBaseUrl();
-    const urls = [`${base}/api/orders/${encodeURIComponent(orderId)}/status`];
-
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          console.log(`[orderSync] ✅ Status #${orderId} updated on server:`, data);
-          return data.order;
-        }
-      } catch (e) {}
+  setAcceptingOrders: acceptingOrders => request('/api/settings', { method: 'PATCH', body: { acceptingOrders } }),
+  setBreak: onBreak => request('/api/settings', { method: 'PATCH', body: { onBreak } }),
+  subscribe({ onInit, onNewOrder, onStatusUpdate, onReset, onAvailability, onMenu }) {
+    let stopped = false;
+    let polling = false;
+    const source = new EventSource(`${baseUrl()}/api/events`);
+    const callbacks = { init: onInit, new_order: onNewOrder, order_status_updated: onStatusUpdate, reset: onReset, availability_updated: onAvailability, menu_updated: onMenu };
+    for (const [event, callback] of Object.entries(callbacks)) {
+      source.addEventListener(event, message => {
+        if (!stopped && callback) callback(JSON.parse(message.data));
+      });
     }
-
-    if (broadcastChannel) {
-      broadcastChannel.postMessage({ type: 'order_status_updated', payload: { id: orderId, status } });
+    async function refresh() {
+      if (polling || stopped) return;
+      polling = true;
+      try { const data = await orderSync.getOrders(); if (!stopped) onInit?.(data); }
+      catch { /* Keep the last known state until the server is reachable again. */ }
+      finally { polling = false; }
     }
-    try {
-      localStorage.setItem('shawarma_status_update_event', JSON.stringify({ id: orderId, status, timestamp: Date.now() }));
-    } catch (e) {}
-
-    return { id: orderId, status };
+    const interval = setInterval(refresh, 3000);
+    refresh();
+    return () => { stopped = true; clearInterval(interval); source.close(); };
   },
-
-  // Subscribe to real-time events via SSE + Parallel Polling
-  subscribe({ onInit, onNewOrder, onStatusUpdate, onReset }) {
-    let eventSource = null;
-    const base = getBaseUrl();
-
-    // 1. Setup SSE stream
-    try {
-      eventSource = new EventSource(`${base}/api/events`);
-
-      eventSource.onopen = () => {
-        console.log('[orderSync] 🟢 SSE stream connected to', `${base}/api/events`);
-      };
-
-      eventSource.addEventListener('init', (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (onInit) onInit(data);
-        } catch (err) {}
-      });
-
-      eventSource.addEventListener('new_order', (e) => {
-        try {
-          const newOrder = JSON.parse(e.data);
-          console.log('[orderSync] 🔔 Received new order via SSE:', newOrder);
-          if (onNewOrder) onNewOrder(newOrder);
-        } catch (err) {}
-      });
-
-      eventSource.addEventListener('order_status_updated', (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          console.log('[orderSync] 🔔 Order status updated via SSE:', data);
-          if (onStatusUpdate) onStatusUpdate(data);
-        } catch (err) {}
-      });
-
-      eventSource.addEventListener('reset', (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (onReset) onReset(data);
-        } catch (err) {}
-      });
-
-      eventSource.onerror = () => {
-        // EventSource reconnects automatically; polling refreshes snapshots.
-      };
-    } catch (e) {
-      console.warn('[orderSync] EventSource init failed', e);
-    }
-
-    // 2. Refresh snapshots every 1.5 seconds alongside SSE.
-    const pollInterval = setInterval(async () => {
-      try {
-        const data = await orderSync.getOrders();
-        if (data && onInit) {
-          onInit(data);
-        }
-      } catch (err) {}
-    }, 1500);
-
-    // 3. Listen to BroadcastChannel for local same-origin tabs
-    const handleBroadcast = (e) => {
-      const { type, order, payload } = e.data || {};
-      if (type === 'new_order' && onNewOrder) onNewOrder(order);
-      if (type === 'order_status_updated' && onStatusUpdate) onStatusUpdate(payload);
-    };
-
-    if (broadcastChannel) {
-      broadcastChannel.addEventListener('message', handleBroadcast);
-    }
-
-    // Cleanup subscription
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      clearInterval(pollInterval);
-      if (broadcastChannel) {
-        broadcastChannel.removeEventListener('message', handleBroadcast);
-      }
-    };
-  }
 };

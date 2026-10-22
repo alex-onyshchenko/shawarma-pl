@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
-import { X, Plus, Minus, Check, Flame, MessageSquare } from 'lucide-react';
-import { MODIFIERS } from '../data/menuData';
+import { X, Plus, Minus, Check, Flame } from 'lucide-react';
 import { tg } from '../utils/telegram';
+import ProductImage from './ProductImage';
 
-export default function ModifierModal({ product, onClose, onAdd }) {
+export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel }) {
+  const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || null);
   const [addedMods, setAddedMods] = useState([]);
   const [removedMods, setRemovedMods] = useState([]);
-  const [selectedLavash, setSelectedLavash] = useState(MODIFIERS.lavash[0]);
-  const [selectedSpiciness, setSelectedSpiciness] = useState(MODIFIERS.spiciness[0]);
+  const [selectedLavash, setSelectedLavash] = useState(product.hasModifiers ? MODIFIERS.lavash[0] : null);
+  const [selectedSpiciness, setSelectedSpiciness] = useState(product.availableSpiciness ? MODIFIERS.spiciness[0] : null);
   const [quantity, setQuantity] = useState(1);
-  const [customComment, setCustomComment] = useState('');
+  const [toastingLevel, setToastingLevel] = useState('normal');
 
   // Calculate price for single item
   const singleItemTotal =
-    product.price +
+    (selectedSize?.price ?? product.price) +
     (selectedLavash?.price || 0) +
     addedMods.reduce((sum, mod) => sum + mod.price, 0);
 
@@ -48,15 +49,18 @@ export default function ModifierModal({ product, onClose, onAdd }) {
   };
 
   const handleConfirm = () => {
+    if (orderingDisabled) return;
     tg.haptic.impact('medium');
     onAdd({
       product,
+      size: selectedSize,
       quantity,
       lavash: selectedLavash,
       spiciness: selectedSpiciness,
       addedModifiers: addedMods,
       removedModifiers: removedMods,
-      comment: customComment.trim(),
+      toastingLevel: product.category === 'Шаурма' ? toastingLevel : null,
+      comment: '',
       totalPrice: finalTotal,
     });
   };
@@ -73,7 +77,7 @@ export default function ModifierModal({ product, onClose, onAdd }) {
       />
 
       {/* Bottom Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-zinc-900 border-t border-zinc-800 rounded-t-[28px] z-50 animate-slide-up max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-zinc-900 border-t border-zinc-800 rounded-t-[28px] z-50 animate-slide-up max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Handle bar */}
         <div className="w-full flex justify-center pt-3 pb-1 shrink-0">
           <div className="w-12 h-1.5 bg-zinc-700/80 rounded-full" />
@@ -84,20 +88,19 @@ export default function ModifierModal({ product, onClose, onAdd }) {
           {/* Header */}
           <div className="flex justify-between items-start pt-2">
             <div className="flex items-center gap-3">
-              <div className="w-16 h-16 rounded-2xl bg-zinc-800 border border-zinc-700/70 flex items-center justify-center text-3xl shadow-inner shrink-0">
-                {product.emoji}
-              </div>
+              <ProductImage product={product} className="w-20" />
               <div>
+                {product.tag && <p className="text-xs font-bold text-orange-300 mb-1">{product.tag}</p>}
                 <h2 className="text-xl font-bold text-white leading-tight">
                   {product.name}
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-orange-400 font-bold text-base">
-                    від {product.price} ₴
+                    {selectedSize?.price ?? product.price} ₴
                   </span>
-                  {product.weight && (
+                  {(selectedSize?.weight || product.weight) && (
                     <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-0.5 rounded-full">
-                      {product.weight}
+                      {selectedSize?.weight || product.weight}
                     </span>
                   )}
                 </div>
@@ -120,8 +123,21 @@ export default function ModifierModal({ product, onClose, onAdd }) {
             {product.description}
           </p>
 
+          {!!product.sizes?.length && (
+            <fieldset>
+              <legend className="font-semibold text-sm text-zinc-200 mb-2.5">Розмір шаурми</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {product.sizes.map(size => <button key={size.id} type="button" aria-pressed={selectedSize?.id === size.id} onClick={() => { tg.haptic.selection(); setSelectedSize(size); }} className={`p-3 rounded-xl border text-left flex flex-col gap-1 ${selectedSize?.id === size.id ? 'border-orange-500 bg-orange-500/15 text-white ring-1 ring-orange-500' : 'border-zinc-800 bg-zinc-800/40 text-zinc-300'}`}>
+                  <span className="text-xs font-semibold">{size.name}</span>
+                  <span className="text-xs text-zinc-400">{size.weight}</span>
+                  <span className="text-sm font-bold text-orange-400">{size.price} ₴</span>
+                </button>)}
+              </div>
+            </fieldset>
+          )}
+
           {/* Lavash Selection */}
-          {product.category === 'Шаурма' && (
+          {product.hasModifiers && product.category === 'Шаурма' && (
             <div>
               <h3 className="font-semibold text-sm text-zinc-200 mb-2.5 flex items-center justify-between">
                 <span>Оберіть лаваш:</span>
@@ -183,7 +199,7 @@ export default function ModifierModal({ product, onClose, onAdd }) {
           )}
 
           {/* Add Ingredients Section */}
-          <div>
+          {product.hasModifiers && <div>
             <h3 className="font-semibold text-sm text-zinc-200 mb-2.5 flex items-center gap-1.5">
               <Plus size={16} className="text-emerald-400" />
               <span>Додати за смаком</span>
@@ -227,10 +243,10 @@ export default function ModifierModal({ product, onClose, onAdd }) {
                 );
               })}
             </div>
-          </div>
+          </div>}
 
           {/* Remove Ingredients Section */}
-          <div>
+          {product.hasModifiers && <div>
             <h3 className="font-semibold text-sm text-zinc-200 mb-2.5 flex items-center gap-1.5">
               <Minus size={16} className="text-red-400" />
               <span>Прибрати з рецепту</span>
@@ -270,26 +286,19 @@ export default function ModifierModal({ product, onClose, onAdd }) {
                 );
               })}
             </div>
-          </div>
+          </div>}
 
-          {/* Special Kitchen Note */}
-          <div>
-            <label className="text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1.5">
-              <MessageSquare size={13} className="text-zinc-400" />
-              <span>Особливі побажання для кухаря:</span>
-            </label>
-            <input
-              type="text"
-              value={customComment}
-              onChange={e => setCustomComment(e.target.value)}
-              placeholder="Наприклад: сильніше підсмажити лаваш"
-              className="w-full bg-zinc-950/60 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-orange-500 transition-colors"
-            />
-          </div>
+          {product.category === 'Шаурма' && <fieldset>
+            <legend className="font-semibold text-sm text-zinc-200 mb-2.5">Підсмажити лаваш</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {[['light', 'Слабіше'], ['normal', 'Звичайна'], ['strong', 'Сильніше']].map(([value, label]) => <button key={value} type="button" aria-pressed={toastingLevel === value} onClick={() => { tg.haptic.selection(); setToastingLevel(value); }} className={`p-3 rounded-xl border text-sm font-semibold transition-colors ${toastingLevel === value ? 'border-orange-500 bg-orange-500/15 text-white ring-1 ring-orange-500' : 'border-zinc-800 bg-zinc-800/40 text-zinc-300'}`}>{label}</button>)}
+            </div>
+          </fieldset>}
+
         </div>
 
         {/* Sticky Footer */}
-        <div className="p-4 bg-zinc-900/95 backdrop-blur-md border-t border-zinc-800/90 flex flex-col gap-3 shrink-0">
+        <div className="safe-bottom p-4 bg-zinc-900/95 backdrop-blur-md border-t border-zinc-800/90 flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between">
             {/* Quantity Stepper */}
             <div className="flex items-center bg-zinc-800/80 rounded-xl p-1 border border-zinc-700/60">
@@ -329,9 +338,10 @@ export default function ModifierModal({ product, onClose, onAdd }) {
 
           <button
             onClick={handleConfirm}
-            className="w-full bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-bold py-3.5 px-6 rounded-2xl text-base shadow-xl shadow-orange-500/25 flex items-center justify-between transition-all"
+            disabled={orderingDisabled}
+            className="w-full bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-2xl text-base shadow-xl shadow-orange-500/25 flex items-center justify-between transition-all"
           >
-            <span>Додати в кошик</span>
+            <span>{orderingDisabled ? orderingUnavailableLabel : 'Додати в кошик'}</span>
             <span className="bg-black/20 px-3 py-1 rounded-full text-sm font-semibold">
               {finalTotal} ₴
             </span>

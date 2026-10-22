@@ -6,67 +6,37 @@ export const CATEGORIES = [
   { id: 'sauces', name: 'Соуси', icon: '🧄' },
 ];
 
+export const SHAWARMA_PRODUCTS = [
+  {
+    id: 'shawarma-signature', imageUrl: '/menu/signature.jpg', name: 'Фірмова шаурма', category: 'Шаурма', tag: '🔥 Найпопулярніша',
+    description: 'Томати свіжі, перець солодкий, квашені огірки, пекінська капуста з зеленню, часниковий соус карі, моцарелла, курка, хмелі.',
+    price: 200, weight: '350–550 г', emoji: '🌯', hasModifiers: false, availableSpiciness: false,
+    sizes: [
+      { id: 'small', name: 'Маленька', price: 200, weight: '350 г' },
+      { id: 'medium', name: 'Середня', price: 230, weight: '450 г' },
+      { id: 'large', name: 'Велика', price: 260, weight: '550 г' },
+    ],
+  },
+  {
+    id: 'shawarma-classic', imageUrl: '/menu/classic.jpg', name: 'Класична шаурма', category: 'Шаурма',
+    description: 'Томати свіжі, картопля фрі, мариновані огірки, пекінська капуста з зеленню, часниковий соус тартар, моцарелла, курка су-від.',
+    price: 190, weight: '350–550 г', emoji: '🌯', hasModifiers: false, availableSpiciness: false,
+    sizes: [
+      { id: 'small', name: 'Маленька', price: 190, weight: '350 г' },
+      { id: 'medium', name: 'Середня', price: 220, weight: '450 г' },
+      { id: 'large', name: 'Велика', price: 250, weight: '550 г' },
+    ],
+  },
+  {
+    id: 'shawarma-beef', imageUrl: '/menu/beef.jpg', name: 'Яловича шаурма', category: 'Шаурма',
+    description: 'Томати свіжі, картопля фрі, мариновані огірки, пекінська капуста, зелень, соус білий барбекю, сир чеддер, яловича котлета.',
+    price: 230, weight: '450 г', emoji: '🌯', hasModifiers: false, availableSpiciness: false,
+    sizes: [{ id: 'medium', name: 'Середня', price: 230, weight: '450 г' }],
+  },
+];
+
 export const PRODUCTS = [
-  {
-    id: 1,
-    name: 'Класична Шаурма',
-    category: 'Шаурма',
-    description: 'Курка на вугіллі, хрустка капуста, огірки, стиглі помідори, фірмовий часниковий соус',
-    price: 150,
-    weight: '420 г',
-    emoji: '🌯',
-    tag: 'Хіт 🔥',
-    hasModifiers: true,
-    availableSpiciness: true,
-  },
-  {
-    id: 2,
-    name: 'Сирна Шаурма',
-    category: 'Шаурма',
-    description: 'Курка гриль, подвійний чеддер, моцарела, кукурудза, авторський сирний соус',
-    price: 180,
-    weight: '450 г',
-    emoji: '🧀',
-    tag: 'Топ ⭐',
-    hasModifiers: true,
-    availableSpiciness: true,
-  },
-  {
-    id: 3,
-    name: 'Гостра Шаурма BBQ',
-    category: 'Шаурма',
-    description: 'Соковита яловичина, перець халапеньйо, маринована цибуля, пекельний соус чилі-BBQ',
-    price: 170,
-    weight: '430 г',
-    emoji: '🌶️',
-    tag: 'Гостре 🌶️',
-    hasModifiers: true,
-    availableSpiciness: true,
-  },
-  {
-    id: 4,
-    name: 'Шаурма з Телятиною',
-    category: 'Шаурма',
-    description: 'Ніжна телятина sous-vide, кінза, гранатовий соус нардашаб, червона цибуля, томати',
-    price: 210,
-    weight: '440 г',
-    emoji: '🥩',
-    tag: 'Преміум ✨',
-    hasModifiers: true,
-    availableSpiciness: true,
-  },
-  {
-    id: 5,
-    name: 'Веган Фалафель',
-    category: 'Шаурма',
-    description: 'Хрусткий фалафель, ніжний хумус, свіжі овочі, кунжутний тахіні соус, кінза',
-    price: 140,
-    weight: '390 г',
-    emoji: '🥙',
-    tag: 'Веган 🌱',
-    hasModifiers: true,
-    availableSpiciness: false,
-  },
+  ...SHAWARMA_PRODUCTS,
   {
     id: 6,
     name: 'Комбо "Ситний Обід"',
@@ -234,9 +204,3 @@ export const MODIFIERS = {
     { level: 3, label: 'Вогонь!', icon: '🔥🌶️' },
   ]
 };
-
-export const PICKUP_LOCATIONS = [
-  { id: 'loc1', name: 'вул. Велика Васильківська, 42', time: '15-20 хв', metro: 'м. Площа Українських Героїв' },
-  { id: 'loc2', name: 'просп. Берестейський, 18', time: '10-15 хв', metro: 'м. Політехнічний інститут' },
-  { id: 'loc3', name: 'Контрактова площа, 8', time: '20-25 хв', metro: 'м. Контрактова площа' },
-];

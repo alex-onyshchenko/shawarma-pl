@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock,
+  Coffee,
+  LockKeyholeOpen,
+  LockKeyhole,
   CheckCircle,
   AlertTriangle,
   Flame,
@@ -21,79 +24,12 @@ import {
 } from 'lucide-react';
 import { kdsSound, requestScreenWakeLock, releaseScreenWakeLock } from './kdsSound';
 import { orderSync } from './utils/orderSync';
-
-// Initial orders from prompt with timestamp calculation for live ticking
-const INITIAL_ORDERS = [
-  {
-    id: '1042',
-    time: '11:42',
-    createdAt: Date.now() - 2 * 60 * 1000, // 2 minutes ago
-    status: 'new', // new, cooking, ready
-    orderType: 'pickup', // pickup | delivery
-    customerName: 'Олександр (Telegram)',
-    items: [
-      {
-        name: 'Класична Шаурма',
-        qty: 2,
-        lavash: 'Сирний лаваш',
-        spiciness: 'Пікантна 🌶️',
-        added: ['Сир Чеддер'],
-        removed: ['Без цибулі'],
-        comment: 'Більше соусу, будь ласка'
-      }
-    ]
-  },
-  {
-    id: '1043',
-    time: '11:45',
-    createdAt: Date.now() - 40 * 1000, // 40 seconds ago
-    status: 'new',
-    orderType: 'delivery',
-    customerName: 'Марія (Telegram)',
-    items: [
-      {
-        name: 'Гостра Шаурма BBQ',
-        qty: 1,
-        lavash: 'Звичайний лаваш',
-        spiciness: 'Вогонь! 🔥🌶️',
-        added: ['Халапеньйо', 'Подвійне м\'ясо на вугіллі'],
-        removed: [],
-        comment: ''
-      },
-      {
-        name: 'Картопля Фрі з сіллю',
-        qty: 1,
-        lavash: null,
-        spiciness: null,
-        added: [],
-        removed: [],
-        comment: ''
-      }
-    ]
-  },
-  {
-    id: '1039',
-    time: '11:30',
-    createdAt: Date.now() - 15 * 60 * 1000, // 15 minutes ago (OVERDUE!)
-    status: 'cooking',
-    orderType: 'pickup',
-    customerName: 'Дмитро (Telegram)',
-    items: [
-      {
-        name: 'Сирна Шаурма',
-        qty: 1,
-        lavash: 'Шпинатний лаваш',
-        spiciness: null,
-        added: ['Хрусткий бекон гриль'],
-        removed: ['Без часникового соусу', 'Без капусти'],
-        comment: 'Добре підрум\'янити на грилі'
-      }
-    ]
-  }
-];
+import { formatTime, MINUTE } from './utils/timing';
+import ManualOrderModal from './components/ManualOrderModal';
+import OrderExtras from './components/OrderExtras';
 
 export default function KitchenDisplayApp() {
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [orders, setOrders] = useState([]);
   const [archivedOrders, setArchivedOrders] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
@@ -101,6 +37,35 @@ export default function KitchenDisplayApp() {
   const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [newOrderAlert, setNewOrderAlert] = useState(null);
+
+  const [availability, setAvailability] = useState(null);
+  const [menu, setMenu] = useState(null);
+  const [showManualOrder, setShowManualOrder] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [error, setError] = useState('');
+  const [earlyAction, setEarlyAction] = useState(null);
+
+  const applySnapshot = data => {
+    setOrders(data.orders || []);
+    setArchivedOrders(data.archivedOrders || []);
+    if (data.availability) setAvailability(data.availability);
+    if (data.menu) setMenu(data.menu);
+  };
+
+  const runAction = async action => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+      applySnapshot(await orderSync.getOrders());
+    } catch (error) {
+      if (error.code === 'EARLY_START') setEarlyAction(action.early);
+      else setError(error.message || 'Не вдалося виконати дію');
+    } finally { busyRef.current = false; setBusy(false); }
+  };
 
   // Live digital clock ticker (every second)
   useEffect(() => {
@@ -123,33 +88,11 @@ export default function KitchenDisplayApp() {
 
   // Real-time synchronization with server and client apps
   useEffect(() => {
-    // 1. Fetch initial orders
-    orderSync.getOrders().then(data => {
-      if (data?.orders) {
-        setOrders(data.orders);
-        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
-      }
-    });
-
     // 2. Subscribe to real-time events via SSE + broadcast
     const unsubscribe = orderSync.subscribe({
-      onInit: (data) => {
-        if (data.orders) {
-          setOrders(prev => {
-            const incomingNew = data.orders.filter(no => !prev.some(po => po.id === no.id));
-            if (incomingNew.length > 0 && prev.length > 0) {
-              const latest = incomingNew[0];
-              if (isSoundEnabled) {
-                kdsSound.playNewOrder();
-              }
-              setNewOrderAlert(`Нове замовлення #${latest.id}!`);
-              setTimeout(() => setNewOrderAlert(null), 4000);
-            }
-            return data.orders;
-          });
-        }
-        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
-      },
+      onInit: applySnapshot,
+      onAvailability: setAvailability,
+      onMenu: setMenu,
       onNewOrder: (newOrder) => {
         setOrders(prev => {
           if (prev.some(o => o.id === newOrder.id)) return prev;
@@ -173,7 +116,7 @@ export default function KitchenDisplayApp() {
           setOrders(prev => {
             const exists = prev.some(o => o.id === id);
             if (exists) {
-              return prev.map(o => (o.id === id ? { ...o, status } : o));
+              return prev.map(o => (o.id === id ? (order || { ...o, status }) : o));
             } else if (order) {
               return [order, ...prev];
             }
@@ -183,111 +126,28 @@ export default function KitchenDisplayApp() {
       },
       onReset: (data) => {
         if (data.orders) setOrders(data.orders);
+        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
       }
     });
 
     return () => unsubscribe();
   }, [isSoundEnabled]);
 
-  // Advance order status
-  const advanceOrder = (orderId, currentStatus) => {
-    if (isSoundEnabled) {
-      kdsSound.playAdvance();
-    }
-
-    const nextStatus =
-      currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived';
-
-    // Optimistic local update
-    if (nextStatus === 'archived') {
-      const completed = orders.find(o => o.id === orderId);
-      if (completed) {
-        setArchivedOrders(prev => [
-          { ...completed, completedAt: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) },
-          ...prev
-        ]);
-      }
-      setOrders(prev => prev.filter(o => o.id !== orderId));
-    } else {
-      setOrders(prev =>
-        prev.map(o => (o.id === orderId ? { ...o, status: nextStatus } : o))
-      );
-    }
-
-    // Sync across all connected apps
-    orderSync.updateStatus(orderId, nextStatus);
+  const changeStatus = (orderId, status, confirmEarly = false) => {
+    const order = orders.find(item => item.id === orderId);
+    const action = () => orderSync.updateStatus(orderId, status, { confirmEarly });
+    action.early = { orderId, status, readyAt: order?.confirmedReadyAt, timeZone: order?.timeZone };
+    return runAction(action);
   };
 
-  // Revert order status (Undo accidental tap)
-  const revertOrder = (orderId, currentStatus, e) => {
-    e.stopPropagation();
-    const prevStatus = currentStatus === 'ready' ? 'cooking' : currentStatus === 'cooking' ? 'new' : 'new';
-    setOrders(prev =>
-      prev.map(o => (o.id === orderId ? { ...o, status: prevStatus } : o))
-    );
-    orderSync.updateStatus(orderId, prevStatus);
-  };
+  const advanceOrder = (orderId, currentStatus) => changeStatus(orderId,
+    currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived');
 
-  // Add new order (either demo or incoming from customer app)
-  const addNewOrder = (customOrder = null) => {
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-    const orderId = customOrder?.id || String(Math.floor(1044 + Math.random() * 50));
+  const acceptOrder = (orderId, delayMinutes) => runAction(() => orderSync.acceptOrder(orderId, delayMinutes));
 
-    const sampleDishes = [
-      {
-        name: 'Класична Шаурма',
-        qty: 1,
-        lavash: 'Звичайний лаваш',
-        spiciness: 'Пікантна 🌶️',
-        added: ['Сир Чеддер'],
-        removed: ['Без цибулі'],
-        comment: 'Швидше, бо поспішаю'
-      },
-      {
-        name: 'Сирна Шаурма',
-        qty: 2,
-        lavash: 'Сирний лаваш',
-        spiciness: null,
-        added: ['Подвійне м\'ясо на вугіллі', 'Хрусткий бекон'],
-        removed: ['Без часникового соусу'],
-        comment: 'Хрустку скоринку!'
-      },
-      {
-        name: 'Веган Фалафель',
-        qty: 1,
-        lavash: 'Шпинатний лаваш',
-        spiciness: null,
-        added: ['Солодка кукурудза'],
-        removed: ['Без помідорів'],
-        comment: ''
-      }
-    ];
-
-    const randomDish = sampleDishes[Math.floor(Math.random() * sampleDishes.length)];
-
-    const createdOrder = customOrder || {
-      id: orderId,
-      time: timeStr,
-      createdAt: Date.now(),
-      status: 'new',
-      orderType: Math.random() > 0.4 ? 'pickup' : 'delivery',
-      customerName: 'Telegram Замовник',
-      items: [randomDish]
-    };
-
-    // Optimistic local add
-    setOrders(prev => [createdOrder, ...prev]);
-
-    if (isSoundEnabled) {
-      kdsSound.playNewOrder();
-    }
-
-    setNewOrderAlert(`Нове замовлення #${orderId}!`);
-    setTimeout(() => setNewOrderAlert(null), 3500);
-
-    // Broadcast through sync server so all tabs & screens see it
-    orderSync.createOrder(createdOrder);
+  const revertOrder = (orderId, currentStatus, event) => {
+    event.stopPropagation();
+    changeStatus(orderId, currentStatus === 'ready' ? 'cooking' : 'new');
   };
 
   // Toggle fullscreen mode (Kiosk)
@@ -302,27 +162,24 @@ export default function KitchenDisplayApp() {
   };
 
   // Restore archived order
-  const restoreArchivedOrder = (order) => {
-    setOrders(prev => [...prev, { ...order, status: 'ready' }]);
-    setArchivedOrders(prev => prev.filter(o => o.id !== order.id));
-  };
+  const restoreArchivedOrder = order => runAction(() => orderSync.updateStatus(order.id, 'ready'));
 
-  const getOrdersByStatus = (status) => orders.filter(o => o.status === status);
+  const getOrdersByStatus = status => orders.filter(order => order.status === status)
+    .sort((a, b) => (a.confirmedReadyAt || a.baselineReadyAt || 0) - (b.confirmedReadyAt || b.baselineReadyAt || 0));
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col selection:bg-orange-500 selection:text-white select-none">
+      {error && <div role="alert" className="bg-red-950 border border-red-700 text-red-200 p-4 flex justify-between gap-4"><span>{error}</span><button onClick={() => setError('')}>Закрити</button></div>}
       {/* Top Header Bar for Tablet KDS */}
-      <header className="bg-zinc-900 border-b border-zinc-800 px-5 py-3.5 flex justify-between items-center shrink-0 z-10 shadow-md">
+      <header className="bg-zinc-900 border-b border-zinc-800 px-5 py-3.5 flex flex-wrap gap-3 justify-between items-center shrink-0 z-10 shadow-md">
         {/* Left: Branding & Status */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center justify-center text-xl font-bold">
-              👨‍🍳
-            </div>
+            <img src="/brand/shaurmisha.jpg" alt="Логотип ШаурМіша" width="40" height="40" className="w-10 h-10 rounded-xl object-contain shrink-0" />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-none">
-                  Термінал Кухаря
+                  {availability?.point?.name || 'Термінал Кухаря'}
                 </h1>
                 <span className="text-xs font-mono font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
@@ -330,7 +187,7 @@ export default function KitchenDisplayApp() {
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                Шаурма на Вугіллі • Точка: вул. Велика Васильківська
+                {availability?.point?.address || 'Завантажуємо точку…'}
               </p>
             </div>
           </div>
@@ -346,27 +203,23 @@ export default function KitchenDisplayApp() {
 
         {/* Right: Controls & Tablet Clock */}
         <div className="flex items-center gap-3">
-          {/* Link to Customer Telegram App */}
-          <a
-            href={import.meta.env.VITE_CLIENT_URL || `${window.location.protocol}//${window.location.hostname}:3000`}
-            target="_blank"
-            rel="noreferrer"
-            className="hidden lg:flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white px-3 py-2 rounded-xl text-xs font-semibold border border-zinc-750 transition-all"
-            title="Відкрити клієнтський Telegram застосунок на порті 3000"
-          >
-            <span>📱 Меню клієнта (:3000)</span>
-          </a>
-
-          {/* Quick Demo Order Button */}
+          {/* Manual order */}
           <button
-            onClick={() => addNewOrder()}
-            className="hidden sm:flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
-            title="Симулювати нове надходження з Telegram Mini App"
+            onClick={() => setShowManualOrder(true)}
+            disabled={!menu || busy}
+            className="disabled:opacity-50 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+            title="Створити замовлення вручну"
           >
             <PlusCircle size={15} />
-            <span>+ Тестове замовлення</span>
+            <span>Створити замовлення</span>
           </button>
 
+          <button disabled={!availability || busy} onClick={() => runAction(() => orderSync.setAcceptingOrders(!availability.cafeOpen))} aria-label={availability?.cafeOpen ? 'Зачинити кафе' : 'Відчинити кафе'} title={availability?.cafeOpen ? 'Зачинити кафе' : 'Відчинити кафе'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${availability?.cafeOpen ? 'border-red-700 text-red-300 hover:bg-red-500/10' : 'border-emerald-600 text-emerald-300 hover:bg-emerald-500/10'}`}>
+            {availability?.cafeOpen ? <LockKeyhole size={20}/> : <LockKeyholeOpen size={20}/>}
+          </button>
+          <button disabled={!availability?.cafeOpen || busy} onClick={() => runAction(() => orderSync.setBreak(!availability.onBreak))} aria-pressed={!!availability?.onBreak} aria-label={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} title={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-40 ${availability?.onBreak ? 'border-amber-500 bg-amber-500/15 text-amber-200' : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'}`}>
+            <Coffee size={20} />
+          </button>
           {/* Sound Toggle */}
           <button
             onClick={() => {
@@ -390,11 +243,7 @@ export default function KitchenDisplayApp() {
             title="Архів виданих замовлень"
           >
             <Archive size={18} />
-            {archivedOrders.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-zinc-700 text-zinc-300 border border-zinc-600 text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                {archivedOrders.length}
-              </span>
-            )}
+
           </button>
 
           {/* Fullscreen (Kiosk Mode) */}
@@ -411,6 +260,7 @@ export default function KitchenDisplayApp() {
             <Clock size={16} className="text-orange-400" />
             <span>
               {currentTime.toLocaleTimeString('uk-UA', {
+                timeZone: 'Europe/Kyiv',
                 hour: '2-digit',
                 minute: '2-digit',
                 second: '2-digit'
@@ -419,6 +269,17 @@ export default function KitchenDisplayApp() {
           </div>
         </div>
       </header>
+
+      {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
+      {showManualOrder && <ManualOrderModal menu={menu} availability={availability} onClose={() => setShowManualOrder(false)} onCreated={order => { setOrders(previous => [order, ...previous.filter(item => item.id !== order.id)]); setShowManualOrder(false); }} />}
+      {earlyAction && <div role="alertdialog" aria-modal="true" aria-labelledby="early-title" className="fixed inset-0 z-50 bg-red-950/95 flex items-center justify-center p-6">
+        <div className="max-w-xl space-y-6 text-center">
+          <AlertTriangle size={64} className="mx-auto text-amber-300" />
+          <h2 id="early-title" className="text-3xl font-black">Увага! Це замовлення на {formatTime(earlyAction.readyAt, earlyAction.timeZone)}.</h2>
+          <p className="text-xl">До видачі ще {Math.max(0, Math.ceil((earlyAction.readyAt - currentTime.getTime()) / MINUTE))} хв. Ви впевнені, що хочете почати готувати його зараз?</p>
+          <div className="flex justify-center gap-4"><button disabled={busy} onClick={async () => { const action = earlyAction; setEarlyAction(null); await changeStatus(action.orderId, action.status, true); }} className="bg-red-600 rounded-xl px-6 py-4 font-bold">Так, підтверджую</button><button onClick={() => setEarlyAction(null)} className="bg-white text-zinc-950 rounded-xl px-6 py-4 font-bold">Скасувати дію</button></div>
+        </div>
+      </div>}
 
       {/* Main Kanban Board (Columns with huge touch cards) */}
       <div className="flex-1 p-4 grid grid-cols-1 md:grid-cols-3 gap-5 overflow-hidden">
@@ -453,6 +314,8 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onRevert={revertOrder}
+                  onAccept={acceptOrder}
+                  busy={busy}
                 />
               ))
             )}
@@ -480,7 +343,7 @@ export default function KitchenDisplayApp() {
               <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 py-16 text-center">
                 <Flame size={44} className="mb-2 opacity-40" />
                 <p className="text-sm font-semibold">На мангалі вільно</p>
-                <p className="text-xs text-zinc-400 mt-1">Тапніть нове замовлення, щоб почати</p>
+                <p className="text-xs text-zinc-400 mt-1">Підтвердьте час і натисніть «Почати готувати»</p>
               </div>
             ) : (
               getOrdersByStatus('cooking').map(order => (
@@ -490,6 +353,8 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onRevert={revertOrder}
+                  onAccept={acceptOrder}
+                  busy={busy}
                 />
               ))
             )}
@@ -527,6 +392,8 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onRevert={revertOrder}
+                  onAccept={acceptOrder}
+                  busy={busy}
                 />
               ))
             )}
@@ -588,203 +455,76 @@ export default function KitchenDisplayApp() {
   );
 }
 
-// ==========================================
-// ORDER CARD COMPONENT (Extra-large contrast)
-// ==========================================
-function OrderCard({ order, currentTime, onAdvance, onRevert }) {
-  // Dynamically calculate elapsed minutes
-  const elapsedMinutes = Math.floor(
-    (currentTime.getTime() - (order.createdAt || currentTime.getTime())) / (60 * 1000)
-  );
-  const elapsedSeconds = Math.floor(
-    ((currentTime.getTime() - (order.createdAt || currentTime.getTime())) / 1000) % 60
-  );
+// Order cards use a compact type scale with emphasis on ID, deadline and dishes.
+function OrderCard({ order, currentTime, onAdvance, onRevert, onAccept, busy }) {
+  const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
+  const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
+  const isDelayed = remaining !== null && remaining < 0 && order.status !== 'ready';
+  const isCritical = remaining !== null && remaining <= -5 && order.status !== 'ready';
 
-  // Warning thresholds
-  const isDelayed = elapsedMinutes >= 10 && order.status !== 'ready';
-  const isCritical = elapsedMinutes >= 15 && order.status !== 'ready';
-
-  return (
-    <div
-      onClick={() => onAdvance(order.id, order.status)}
-      className={`relative rounded-2xl p-4 sm:p-5 cursor-pointer transition-all active:scale-[0.985] shadow-xl border-4 select-none ${
-        order.status === 'new'
-          ? 'bg-zinc-900 border-zinc-700/80 hover:border-blue-500'
-          : order.status === 'cooking'
-          ? isCritical
-            ? 'bg-red-950/60 border-red-500 animate-pulse shadow-red-500/20'
-            : isDelayed
-            ? 'bg-amber-950/50 border-amber-500 shadow-amber-500/15'
-            : 'bg-zinc-900 border-orange-500/60 hover:border-orange-500'
-          : 'bg-zinc-900 border-emerald-500/60 hover:border-emerald-500'
-      }`}
-    >
-      {/* Top Card Info Bar */}
-      <div className="flex justify-between items-start mb-3 pb-3 border-b-2 border-zinc-700/60">
-        <div className="flex items-center gap-2.5">
-          {/* Order ID in MASSIVE typography */}
-          <span className="text-3xl sm:text-4xl font-black text-white tracking-tight font-mono">
-            #{order.id}
-          </span>
-
-          <div className="flex flex-col">
-            {/* Delivery / Pickup Badge */}
-            <span
-              className={`text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                order.orderType === 'delivery'
-                  ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40'
-                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-              }`}
-            >
-              {order.orderType === 'delivery' ? (
-                <>
-                  <Bike size={12} />
-                  <span>Доставка</span>
-                </>
-              ) : (
-                <>
-                  <UserCheck size={12} />
-                  <span>Самовивіз</span>
-                </>
-              )}
-            </span>
-            <span className="text-xs text-zinc-400 font-mono mt-0.5">{order.time}</span>
-          </div>
-        </div>
-
-        {/* Right: Elapsed Timer Badge (Turns RED on 10+ min!) */}
-        <div className="flex items-center gap-2">
-          {/* Undo Button if needed */}
-          {order.status !== 'new' && (
-            <button
-              onClick={(e) => onRevert(order.id, order.status, e)}
-              className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-lg transition-colors border border-zinc-700 active:scale-90"
-              title="Повернути статус назад"
-            >
-              <RotateCcw size={14} />
-            </button>
-          )}
-
-          <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base border ${
-              isCritical
-                ? 'bg-red-500 text-white border-red-400 animate-pulse'
-                : isDelayed
-                ? 'bg-amber-500 text-black border-amber-400'
-                : 'bg-zinc-800 text-zinc-200 border-zinc-700'
-            }`}
-          >
-            {isDelayed ? <AlertTriangle size={17} /> : <Clock size={17} />}
-            <span>
-              {elapsedMinutes}:{elapsedSeconds < 10 ? `0${elapsedSeconds}` : elapsedSeconds}
-            </span>
+  return <article aria-label={`Замовлення ${order.id}`} className={`relative rounded-2xl border p-4 shadow-sm transition-colors ${
+    order.status === 'cooking' && isCritical ? 'border-red-500 bg-red-950/40' :
+    order.status === 'cooking' && isDelayed ? 'border-amber-500/60 bg-amber-950/20' :
+    order.status === 'cooking' ? 'border-orange-500/40 bg-zinc-900' :
+    order.status === 'ready' ? 'border-emerald-500/40 bg-zinc-900' : 'border-zinc-700/80 bg-zinc-900 hover:border-zinc-600'
+  }`}>
+    <header className="mb-3 border-b border-zinc-800 pb-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 break-all text-[26px] font-semibold leading-none tracking-tight text-zinc-50 tabular-nums">#{order.id}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {order.status !== 'new' && <button disabled={busy} onClick={event => onRevert(order.id, order.status, event)} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50" title="Повернути статус назад"><RotateCcw size={15}/></button>}
+          <div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium tabular-nums ${isCritical ? 'border-red-500/40 bg-red-500/15 text-red-200' : isDelayed ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-zinc-700/70 bg-zinc-800/50 text-zinc-300'}`}>
+            {isDelayed ? <AlertTriangle size={14}/> : <Clock size={14}/>}
+            <span>{order.status === 'ready' ? 'Готово' : remaining === null ? 'Без часу' : remaining >= 0 ? `До видачі ${remaining} хв` : `Запізнення ${Math.abs(remaining)} хв`}</span>
           </div>
         </div>
       </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[11px] leading-4">
+        <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium ${order.orderType === 'delivery' ? 'bg-sky-500/10 text-sky-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
+          {order.orderType === 'delivery' ? <Bike size={13}/> : <UserCheck size={13}/>}{order.orderType === 'delivery' ? 'Доставка' : 'Самовивіз'}
+        </span>
+        {order.source === 'kitchen' && <span className="text-zinc-400">Створено вручну</span>}
+        <span className="ml-auto text-xs text-zinc-500 tabular-nums">{order.time}</span>
+      </div>
+    </header>
 
-      {/* Customer items with HUGE readability and COLOR CODED MODIFIERS */}
-      <div className="flex flex-col gap-3.5 my-2">
-        {order.items.map((item, idx) => (
-          <div key={idx} className="bg-zinc-950/70 p-3 rounded-xl border border-zinc-800/80 space-y-2">
-            {/* Dish Title & Huge Quantity */}
-            <div className="flex items-center gap-2.5">
-              <span className="bg-white text-zinc-950 font-black text-xl sm:text-2xl px-2.5 py-0.5 rounded-lg shrink-0 shadow-sm">
-                {item.qty}x
-              </span>
-              <span className="font-black text-lg sm:text-xl text-white tracking-tight leading-tight">
-                {item.name}
-              </span>
+    {readyAt && <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
+      <div className="min-w-0"><p className="text-xs leading-5 text-zinc-400">{order.acceptedAt ? 'Підтверджена видача' : order.timingMode === 'scheduled' ? 'На точний час' : 'Попередній час видачі'}</p>
+        {!!order.kitchenDelayMinutes && <p className="text-[11px] text-amber-300/90">Зсув +{order.kitchenDelayMinutes} хв</p>}
+      </div>
+      <p className="shrink-0 text-[28px] font-semibold leading-tight tracking-tight text-orange-200 tabular-nums">{formatTime(readyAt, order.timeZone)}</p>
+    </div>}
+
+    <div className="space-y-3">
+      {order.items.map((item, index) => {
+        const suffix = item.sizeName && item.weight ? ` · ${item.sizeName} (${item.weight})` : '';
+        const title = suffix && item.name.endsWith(suffix) ? item.name.slice(0, -suffix.length) : item.name;
+        const toasting = item.toastingLevel === 'normal' ? 'Звичайна' : item.toasting;
+        return <div key={index} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3">
+          <div className="flex items-start gap-2.5">
+            <span className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-lg border border-zinc-700/60 bg-zinc-800/70 px-1.5 text-base font-semibold leading-none text-zinc-100 tabular-nums">{item.qty}<span className="ml-0.5 text-xs font-normal text-zinc-500">×</span></span>
+            <div className="min-w-0"><p className="text-base font-semibold leading-6 text-zinc-100">{title}</p>
+              {item.sizeName && <p className="mt-0.5 text-[13px] leading-5 text-zinc-400">{item.sizeName}{item.weight ? ` · ${item.weight}` : ''}</p>}
             </div>
-
-            {/* Lavash & Spiciness row */}
-            {(item.lavash || item.spiciness) && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {item.lavash && (
-                  <span className="bg-zinc-800 text-orange-300 text-xs font-bold px-2 py-0.5 rounded border border-orange-500/30">
-                    🥖 {item.lavash}
-                  </span>
-                )}
-                {item.spiciness && (
-                  <span className="bg-red-500/20 text-red-300 text-xs font-bold px-2 py-0.5 rounded border border-red-500/30">
-                    {item.spiciness}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* CRITICAL COLOR CODING: Modifiers */}
-            {/* ADDED MODIFIERS (Vibrant Green) */}
-            {item.added && item.added.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {item.added.map((mod, i) => (
-                  <div
-                    key={i}
-                    className="text-emerald-300 bg-emerald-500/20 border border-emerald-500/50 font-black text-sm sm:text-base px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm"
-                  >
-                    <span className="text-emerald-400 font-extrabold text-lg leading-none">+</span>
-                    <span>{mod}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* REMOVED MODIFIERS (Vibrant Alert Red - CRITICAL) */}
-            {item.removed && item.removed.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {item.removed.map((mod, i) => (
-                  <div
-                    key={i}
-                    className="text-red-200 bg-red-600/30 border-2 border-red-500 font-black text-sm sm:text-base px-2.5 py-1 rounded-lg uppercase tracking-wide flex items-center gap-1 shadow-sm"
-                  >
-                    <span className="text-red-400 font-extrabold text-lg leading-none">✕</span>
-                    <span>{mod}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Customer Special Comment (Yellow Box) */}
-            {item.comment && (
-              <div className="bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-bold p-2 rounded-lg flex items-start gap-1.5 mt-1">
-                <span className="text-base leading-none">⚠️</span>
-                <span>«{item.comment}»</span>
-              </div>
-            )}
           </div>
-        ))}
-      </div>
-
-      {/* 1-Tap Action Call to Action Button */}
-      <div className="mt-4 pt-3 border-t-2 border-zinc-700/60">
-        <div
-          className={`w-full py-3.5 px-4 rounded-xl font-black text-base text-center uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-transform ${
-            order.status === 'new'
-              ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30'
-              : order.status === 'cooking'
-              ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-orange-500/30'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
-          }`}
-        >
-          {order.status === 'new' && (
-            <>
-              <ChefHat size={20} />
-              <span>Тапніть, щоб почати готувати ➔</span>
-            </>
-          )}
-          {order.status === 'cooking' && (
-            <>
-              <CheckCircle size={20} />
-              <span>Тапніть, якщо готово ➔</span>
-            </>
-          )}
-          {order.status === 'ready' && (
-            <>
-              <UserCheck size={20} />
-              <span>Тапніть, щоб видати клієнту ✓</span>
-            </>
-          )}
-        </div>
-      </div>
+          {toasting && <div className={`mt-2.5 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-4 ${item.toastingLevel === 'strong' ? 'bg-orange-500/10 text-orange-200' : 'bg-zinc-800/50 text-zinc-300'}`}><Flame size={13} className="shrink-0 opacity-70"/><span className="text-zinc-400">Піджарка:</span><span className="font-medium">{toasting.toLowerCase()}</span></div>}
+          {(item.lavash || item.spiciness) && <div className="mt-2 flex flex-wrap gap-1.5">
+            {item.lavash && <span className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-orange-200">{item.lavash}</span>}
+            {item.spiciness && <span className="rounded-md bg-red-500/10 px-2 py-1 text-xs text-red-300">{item.spiciness}</span>}
+          </div>}
+          {!!item.added?.length && <div className="mt-2 flex flex-wrap gap-1.5">{item.added.map((mod, i) => <span key={i} className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300">+ {mod}</span>)}</div>}
+          {!!item.removed?.length && <div className="mt-2 flex flex-wrap gap-1.5">{item.removed.map((mod, i) => <span key={i} className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-200">✕ {mod}</span>)}</div>}
+          {item.comment && <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-xs leading-5 text-amber-200">⚠️ {item.comment}</p>}
+        </div>;
+      })}
     </div>
-  );
+
+    <OrderExtras order={order}/>
+    <div className="mt-3 border-t border-zinc-800 pt-3">
+      {order.status === 'new' && !order.acceptedAt ? <div>
+        <p className="mb-2 text-xs text-zinc-400">Підтвердьте час видачі:</p>
+        <div className="grid grid-cols-2 gap-2">{[0, 5, 10, 15].map(delay => <button key={delay} disabled={busy} onClick={() => onAccept(order.id, delay)} className={`min-h-[60px] rounded-xl px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${delay === 0 ? 'bg-emerald-700 hover:bg-emerald-600' : delay <= 10 ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-700 hover:bg-red-600'}`}><span className="block opacity-90">{delay === 0 ? 'Без змін' : `+${delay} хв`}</span><span className="mt-0.5 block text-lg font-semibold tabular-nums">{formatTime(order.baselineReadyAt + delay * MINUTE, order.timeZone)}</span></button>)}</div>
+      </div> : <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>}
+    </div>
+  </article>;
 }

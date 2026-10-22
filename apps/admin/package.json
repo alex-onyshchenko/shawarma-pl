@@ -1,0 +1,23 @@
+{
+  "name": "@shawarma/admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --mode dev",
+    "build": "vite build --mode prod",
+    "preview": "vite preview --mode prod",
+    "build:dev": "vite build --mode dev",
+    "build:prod": "vite build --mode prod",
+    "preview:dev": "vite preview --mode dev"
+  },
+  "dependencies": {
+    "lucide-react": "^0.475.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.1.0"
+  }
+}

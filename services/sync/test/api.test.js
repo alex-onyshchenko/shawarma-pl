@@ -5,11 +5,13 @@ import { once } from 'node:events';
 
 let child;
 let base;
+const hourOffset = 12 - new Date().getUTCHours();
+const testTimeZone = hourOffset === 0 ? 'Etc/GMT' : `Etc/GMT${hourOffset > 0 ? '-' : '+'}${Math.abs(hourOffset)}`;
 
 before(async () => {
   child = spawn(process.execPath, ['server.js'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '0' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', OPEN_HOUR: '0', CLOSE_HOUR: '24', STORE_TIMEZONE: testTimeZone, ADMIN_TOKEN: 'test-admin-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   base = await new Promise((resolve, reject) => {
@@ -76,7 +78,7 @@ test('standalone service exposes health, REST and live SSE without either fronte
       id: 'service-contract-test',
       customerName: 'Integration test',
       totalPrice: 150,
-      items: [{ name: 'Класична Шаурма', qty: 1, added: [], removed: [] }],
+      items: [{ productId: 'shawarma-classic', sizeId: 'small', name: 'Класична шаурма', qty: 1, added: [], removed: [] }],
     };
     const created = await fetch(`${base}/api/orders`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order),
@@ -86,6 +88,12 @@ test('standalone service exposes health, REST and live SSE without either fronte
     const incoming = await nextEvent();
     assert.equal(incoming.type, 'new_order');
     assert.equal(incoming.data.id, order.id);
+
+    const acceptance = await fetch(`${base}/api/orders/${order.id}/accept`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delayMinutes: 0 }),
+    });
+    assert.equal(acceptance.status, 200);
+    assert.equal((await nextEvent()).data.order.acceptedAt > 0, true);
 
     for (const status of ['cooking', 'ready', 'archived']) {
       const updated = await fetch(`${base}/api/orders/${order.id}/status`, {
@@ -108,4 +116,282 @@ test('standalone service exposes health, REST and live SSE without either fronte
     controller.abort();
     await reader.cancel().catch(() => {});
   }
+});
+
+async function request(path, method = 'GET', body, token) {
+  const response = await fetch(base + path, {
+    method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: response.status, data: await response.json() };
+}
+const item = { productId: 'shawarma-classic', sizeId: 'small', name: 'Класична шаурма', qty: 1, added: [], removed: [] };
+
+test('scheduled order: one confirmation, capped delay, protected early start and ready transitions', async () => {
+  const availability = (await request('/api/availability')).data;
+  const slot = availability.slots.find(value => value > Date.now() + 40 * 60000);
+  assert.ok(slot);
+  const created = await request('/api/orders', 'POST', { items: [item], timingMode: 'scheduled', requestedReadyAt: slot, clientRequestId: 'scheduled-test' });
+  assert.equal(created.status, 201);
+  const order = created.data.order;
+  const path = `/api/orders/${order.id}`;
+  assert.equal(order.paymentStatus, 'cash_due');
+  assert.equal(order.confirmedReadyAt, null);
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'cooking' })).status, 409);
+  assert.equal((await request(`${path}/accept`, 'POST', { delayMinutes: 20 })).status, 400);
+  const accepted = await request(`${path}/accept`, 'POST', { delayMinutes: 15 });
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.data.order.confirmedReadyAt, slot + 15 * 60000);
+  assert.match(accepted.data.order.notification, /Новий час/);
+  assert.equal(accepted.data.order.status, 'new');
+  assert.equal((await request(`${path}/accept`, 'POST', { delayMinutes: 15 })).status, 200);
+  assert.equal((await request(`${path}/accept`, 'POST', { delayMinutes: 5 })).status, 409);
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'ready', confirmEarly: true })).status, 409);
+  const early = await request(`${path}/status`, 'PATCH', { status: 'cooking' });
+  assert.equal(early.status, 409);
+  assert.equal(early.data.code, 'EARLY_START');
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'cooking', confirmEarly: 'true' })).status, 409);
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'cooking', confirmEarly: true })).status, 200);
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'ready' })).data.code, 'EARLY_START');
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'ready', confirmEarly: true })).status, 200);
+  assert.equal((await request(`${path}/status`, 'PATCH', { status: 'archived' })).status, 200);
+});
+
+test('ASAP uses a quarter-hour deadline and preserves lavash toasting in the order', async () => {
+  const result = await request('/api/orders', 'POST', { items: [{ ...item, toastingLevel: 'strong' }], timingMode: 'asap' });
+  assert.equal(result.status, 201);
+  const order = result.data.order;
+  assert.equal(order.time, new Intl.DateTimeFormat('uk-UA', { timeZone: order.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(order.createdAt));
+  assert.equal(order.baselineReadyAt % (15 * 60000), 0);
+  assert.ok(order.baselineReadyAt - order.createdAt >= 15 * 60000);
+  assert.ok(order.baselineReadyAt - order.createdAt < 30 * 60000);
+  assert.equal(order.items[0].toasting, 'Сильніше');
+  assert.equal(order.items[0].unitPrice, 190);
+  const accepted = await request(`/api/orders/${order.id}/accept`, 'POST', { delayMinutes: 0 });
+  assert.equal(accepted.data.order.items[0].toastingLevel, 'strong');
+  assert.equal(accepted.data.order.confirmedReadyAt, order.baselineReadyAt);
+});
+
+test('stale slots adjust automatically; no duplicate simulated payment on retries', async () => {
+  const availability = (await request('/api/availability')).data;
+  const oldSlot = Math.floor(Date.now() / 900000) * 900000;
+  const payload = { items: [item], timingMode: 'scheduled', requestedReadyAt: oldSlot, clientRequestId: 'retry-test' };
+  const first = await request('/api/orders', 'POST', payload);
+  assert.equal(first.status, 201);
+  assert.equal(first.data.order.baselineReadyAt, availability.slots[0]);
+  assert.equal(first.data.order.timingAdjusted, true);
+  const second = await request('/api/orders', 'POST', payload);
+  assert.equal(second.status, 200);
+  assert.equal(first.data.order.id, second.data.order.id);
+  assert.equal(first.data.order.paidAt, second.data.order.paidAt);
+  assert.equal((await request('/api/orders', 'POST', { ...payload, clientRequestId: 'invalid-slot', requestedReadyAt: oldSlot + 60000 })).status, 400);
+});
+
+test('kitchen controls admission without an admin password; existing orders and retries recover', async () => {
+  const existing = (await request('/api/orders', 'POST', { items: [item], clientRequestId: 'stop-test', paymentMethod: 'cash' })).data.order;
+  assert.equal(existing.paymentStatus, 'cash_due');
+  assert.equal((await request('/api/settings', 'PATCH', { acceptingOrders: false })).status, 200);
+  assert.equal((await request('/api/settings', 'PATCH', { acceptingOrders: 'false' })).status, 400);
+  try {
+    assert.equal((await request('/api/settings', 'PATCH', { acceptingOrders: false }, 'test-admin-key')).status, 200);
+    assert.equal((await request('/api/availability')).data.acceptingOrders, false);
+    const blocked = await request('/api/orders', 'POST', { items: [item] });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.data.code, 'ORDERS_PAUSED');
+    assert.equal((await request('/api/orders', 'POST', { items: [item], clientRequestId: 'stop-test' })).data.order.id, existing.id);
+    const accepted = await request(`/api/orders/${existing.id}/accept`, 'POST', { delayMinutes: 0 });
+    assert.equal(accepted.status, 200);
+    assert.match(accepted.data.order.notification, /прийнято/);
+    assert.doesNotMatch(accepted.data.order.notification, /успішно оплачено/);
+    assert.equal((await request(`/api/orders/${existing.id}/status`, 'PATCH', { status: 'cooking' })).status, 200);
+  } finally {
+    await request('/api/settings', 'PATCH', { acceptingOrders: true }, 'test-admin-key');
+  }
+});
+
+test('lunch break pauses only new orders, persists in point settings and ends without a password', async () => {
+  const existing = (await request('/api/orders', 'POST', { items: [item], clientRequestId: 'before-lunch' })).data.order;
+  try {
+    const paused = await request('/api/settings', 'PATCH', { onBreak: true });
+    assert.equal(paused.status, 200);
+    assert.equal(paused.data.onBreak, true);
+    assert.equal(paused.data.cafeOpen, true);
+    assert.equal(paused.data.acceptingOrders, false);
+    assert.equal((await request('/api/menu')).data.point.onBreak, true);
+    assert.equal((await request('/api/orders', 'POST', { items: [item] })).data.code, 'LUNCH_BREAK');
+    assert.equal((await request('/api/orders', 'POST', { items: [item], clientRequestId: 'before-lunch' })).data.order.id, existing.id);
+    assert.equal((await request(`/api/orders/${existing.id}/accept`, 'POST', { delayMinutes: 0 })).status, 200);
+    assert.equal((await request('/api/settings', 'PATCH', { onBreak: 'yes' })).status, 400);
+    const resumed = await request('/api/settings', 'PATCH', { onBreak: false });
+    assert.equal(resumed.data.acceptingOrders, true);
+    assert.equal(resumed.data.onBreak, false);
+    await request('/api/settings', 'PATCH', { onBreak: true });
+    const closed = await request('/api/settings', 'PATCH', { acceptingOrders: false });
+    assert.equal(closed.data.cafeOpen, false);
+    assert.equal(closed.data.onBreak, false);
+    assert.equal((await request('/api/settings', 'PATCH', { onBreak: true })).status, 409);
+  } finally { await request('/api/settings', 'PATCH', { acceptingOrders: true }); }
+});
+
+test('manual kitchen orders atomically confirm selected sizes and deadlines without duplicates', async () => {
+  const availability = (await request('/api/availability')).data;
+  const slot = availability.slots.find(slot => slot > Date.now() + 40 * 60000);
+  const payload = { items: [{ productId: 'shawarma-signature', sizeId: 'large', toastingLevel: 'strong', qty: 2 }], requestedReadyAt: slot, expectedTotal: 520, clientRequestId: 'manual-order-test' };
+  const created = await request('/api/kitchen/orders', 'POST', payload);
+  assert.equal(created.status, 201);
+  const order = created.data.order;
+  assert.equal(order.source, 'kitchen');
+  assert.equal(order.status, 'new');
+  assert.equal(order.timingMode, 'scheduled');
+  assert.equal(order.confirmedReadyAt, slot);
+  assert.ok(order.acceptedAt);
+  assert.equal(order.totalPrice, 520);
+  assert.equal(order.items[0].name, 'Фірмова шаурма · Велика (550 г)');
+  assert.equal(order.items[0].toasting, 'Сильніше');
+  assert.equal(order.paymentStatus, 'cash_due');
+  assert.equal((await request(`/api/orders/${order.id}/accept`, 'POST', { delayMinutes: 5 })).status, 409);
+  assert.equal((await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'cooking' })).data.code, 'EARLY_START');
+  const repeated = await request('/api/kitchen/orders', 'POST', payload);
+  assert.equal(repeated.status, 200);
+  assert.equal(repeated.data.order.id, order.id);
+  assert.equal((await request('/api/orders')).data.orders.filter(item => item.clientRequestId === payload.clientRequestId).length, 1);
+  assert.equal((await request('/api/kitchen/orders', 'POST', { ...payload, clientRequestId: 'missing-manual-time', requestedReadyAt: null })).status, 400);
+  assert.equal((await request('/api/kitchen/orders', 'POST', { ...payload, clientRequestId: 'bad-manual-size', items: [{ productId: 'shawarma-beef', sizeId: 'small', qty: 1 }] })).status, 409);
+  try {
+    await request('/api/settings', 'PATCH', { acceptingOrders: false }, 'test-admin-key');
+    assert.equal((await request('/api/kitchen/orders', 'POST', { ...payload, clientRequestId: 'closed-manual' })).status, 201);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, clientRequestId: 'closed-client' })).status, 409);
+    await request('/api/settings', 'PATCH', { acceptingOrders: true });
+    await request('/api/settings', 'PATCH', { onBreak: true });
+    assert.equal((await request('/api/kitchen/orders', 'POST', { ...payload, clientRequestId: 'break-manual' })).status, 201);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, clientRequestId: 'break-client' })).data.code, 'LUNCH_BREAK');
+    assert.equal((await request('/api/kitchen/orders', 'POST', payload)).data.order.id, order.id);
+  } finally { await request('/api/settings', 'PATCH', { acceptingOrders: true }, 'test-admin-key'); }
+});
+
+let adminCookie = '';
+async function admin(path, method = 'GET', body, extra = {}) {
+  const response = await fetch(base + '/api/admin' + path, {
+    method, headers: { 'Content-Type': 'application/json', Cookie: adminCookie, ...extra },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie') };
+}
+
+test('admin authentication uses an HttpOnly session and blocks foreign origins', async () => {
+  assert.equal((await admin('/state')).status, 401);
+  assert.equal((await admin('/session', 'POST', { password: 'incorrect' })).status, 401);
+  assert.equal((await admin('/session', 'POST', { password: 'test-admin-key' }, { Origin: 'https://untrusted.example' })).status, 403);
+  const login = await admin('/session', 'POST', { password: 'test-admin-key' });
+  assert.equal(login.status, 200);
+  assert.match(login.cookie, /HttpOnly/);
+  assert.match(login.cookie, /SameSite=Strict/);
+  adminCookie = login.cookie.split(';')[0];
+  assert.equal((await admin('/state')).status, 200);
+});
+
+test('one active demo point; new points editable but cannot be activated or publicly ordered', async () => {
+  const created = await admin('/points', 'POST', { name: 'Future point', address: 'Future address' });
+  assert.equal(created.status, 201);
+  const point = created.data.point;
+  assert.equal(point.active, false);
+  assert.equal((await admin(`/points/${point.id}`, 'PATCH', { active: true })).status, 409);
+  assert.equal((await admin('/points/demo', 'PATCH', { active: false })).status, 409);
+  assert.equal((await admin(`/points/${point.id}`, 'PATCH', { name: 'Edited draft' })).data.point.name, 'Edited draft');
+  assert.equal((await request('/api/points')).data.points.length, 1);
+  assert.equal((await request('/api/orders', 'POST', { pointId: point.id, items: [item] })).status, 409);
+  const newProduct = await admin(`/points/${point.id}/products`, 'POST', { name: 'Draft dish', category: 'Test', price: 99, hasModifiers: false, availableSpiciness: false });
+  assert.equal(newProduct.status, 201);
+  assert.ok(!(await request('/api/menu')).data.products.some(product => product.id === newProduct.data.product.id));
+  const state = (await admin('/state')).data;
+  assert.equal(state.points.filter(point => point.active).length, 1);
+  assert.equal(state.menus[point.id].length, 1);
+});
+
+test('menu changes affect new quotes, reject stale totals, preserve old order snapshots', async () => {
+  const original = (await request('/api/menu')).data.products.find(product => product.id === '12');
+  const payload = { items: [{ productId: '12', qty: 1 }], expectedTotal: 40 };
+  const first = await request('/api/orders', 'POST', payload);
+  assert.equal(first.status, 201);
+  assert.equal(first.data.order.totalPrice, 40);
+  assert.equal(first.data.order.items[0].unitPrice, 40);
+  try {
+    assert.equal((await admin('/points/demo/menu/12', 'PATCH', { price: 75 })).status, 200);
+    assert.equal((await request('/api/menu')).data.products.find(product => product.id === '12').price, 75);
+    assert.equal((await request('/api/orders', 'POST', payload)).status, 409);
+    const fresh = await request('/api/orders', 'POST', { ...payload, expectedTotal: 75 });
+    assert.equal(fresh.status, 201);
+    assert.equal(fresh.data.order.totalPrice, 75);
+    assert.equal((await request('/api/orders')).data.orders.find(order => order.id === first.data.order.id).items[0].unitPrice, 40);
+    await admin('/points/demo/menu/12', 'PATCH', { available: false });
+    assert.equal((await request('/api/orders', 'POST', { items: [{ productId: '12', qty: 1 }] })).status, 409);
+    await admin('/points/demo/menu/12', 'PATCH', { available: true, visible: false });
+    assert.ok(!(await request('/api/menu')).data.products.some(product => product.id === '12'));
+    assert.equal((await request('/api/orders', 'POST', { items: [{ productId: '12', qty: 1 }] })).status, 409);
+  } finally {
+    await admin('/points/demo/menu/12', 'PATCH', { price: original.price, visible: true, available: true });
+  }
+});
+
+test('pickup checkout uses admin address, optional phone, napkins and receipt payment only', async () => {
+  const menu = (await request('/api/menu')).data;
+  assert.equal(menu.point.address, 'м. Полтава, вул. Соборності, 46');
+  assert.equal(menu.point.metro, '');
+  assert.equal(menu.point.pickupDiscountPercent, 0);
+  assert.equal(menu.point.deliveryEnabled, false);
+  assert.equal(menu.products.find(product => product.id === 'shawarma-signature').tag, '🔥 Найпопулярніша');
+  const payload = { items: [item], paymentMethod: 'cash', phoneNumber: '', napkins: false, expectedTotal: 190 };
+  const originalAddress = menu.point.address;
+  try {
+    await admin('/points/demo', 'PATCH', { address: 'Updated admin pickup address' });
+    assert.equal((await request('/api/menu')).data.point.address, 'Updated admin pickup address');
+    const result = await request('/api/orders', 'POST', { ...payload, selectedLocation: { name: 'Forged client address' } });
+    assert.equal(result.status, 201);
+    assert.equal(result.data.order.selectedLocation.name, 'Updated admin pickup address');
+    assert.equal(result.data.order.phoneNumber, '');
+    assert.equal(result.data.order.napkins, false);
+    assert.equal(result.data.order.cutlery, false);
+    assert.equal(result.data.order.discount, 0);
+    assert.equal(result.data.order.paymentStatus, 'cash_due');
+    assert.equal(result.data.order.paidAt, null);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, paymentMethod: 'card' })).status, 409);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, paymentMethod: 'telegram' })).status, 409);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, orderType: 'delivery' })).status, 409);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, napkins: 'false' })).status, 400);
+  } finally { await admin('/points/demo', 'PATCH', { address: originalAddress }); }
+});
+
+test('schedule exceptions close ordering; minute-level schedules and modifier edits validate', async () => {
+  const point = (await admin('/state')).data.points.find(point => point.id === 'demo');
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: point.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format();
+  try {
+    assert.equal((await admin('/points/demo', 'PATCH', { exceptions: [{ date, closed: true, open: '10:30', close: '21:45' }] })).status, 200);
+    assert.equal((await request('/api/availability')).data.closed, true);
+    assert.deepEqual((await request('/api/availability')).data.slots, []);
+    assert.equal((await request('/api/orders', 'POST', { items: [item] })).status, 400);
+    const manualSlots = (await request('/api/availability')).data.manualSlots;
+    const manualOnHoliday = await request('/api/kitchen/orders', 'POST', { items: [{ ...item, toastingLevel: 'normal' }], requestedReadyAt: manualSlots[0] });
+    assert.equal(manualOnHoliday.status, 201);
+    assert.equal(manualOnHoliday.data.order.items[0].toasting, 'Звичайна піджарка');
+    assert.equal(manualOnHoliday.data.order.confirmedReadyAt, manualSlots[0]);
+    await admin('/points/demo', 'PATCH', { exceptions: [], weeklyHours: point.weeklyHours.map(() => ({ closed: false, open: '00:00', close: '00:15' })) });
+    assert.equal((await request('/api/availability')).data.asapAvailable, false);
+    assert.equal((await request('/api/kitchen/orders', 'POST', { items: [item], requestedReadyAt: manualSlots[0] })).status, 201);
+    assert.equal((await admin('/points/demo', 'PATCH', { weeklyHours: point.weeklyHours.map(rule => ({ ...rule, open: '22:00', close: '10:00' })) })).status, 400);
+    const modifiers = (await admin('/state')).data.modifiers;
+    const invalid = structuredClone(modifiers); invalid.lavash = [];
+    assert.equal((await admin('/modifiers', 'PUT', invalid)).status, 400);
+    assert.equal((await admin('/modifiers', 'PUT', modifiers)).status, 200);
+  } finally { await admin('/points/demo', 'PATCH', { exceptions: point.exceptions, weeklyHours: point.weeklyHours }); }
+  assert.equal((await admin('/session', 'DELETE')).status, 200);
+  assert.equal((await admin('/state')).status, 401);
+});
+
+
+test('clear removes active and archived orders instead of generating demo history', async () => {
+  assert.ok((await request('/api/orders')).data.orders.length > 0);
+  assert.equal((await request('/api/reset', 'POST', {})).status, 200);
+  const cleared = (await request('/api/orders')).data;
+  assert.deepEqual(cleared.orders, []);
+  assert.deepEqual(cleared.archivedOrders, []);
 });

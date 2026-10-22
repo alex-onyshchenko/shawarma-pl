@@ -4,17 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "npm ci --prefix apps/client && npm ci --prefix apps/kitchen && npm ci --prefix apps/analytics && npm ci --prefix services/sync",
+    "setup": "node scripts/setup-env.mjs && npm ci --prefix apps/client && npm ci --prefix apps/kitchen && npm ci --prefix apps/analytics && npm ci --prefix services/sync && npm ci --prefix apps/admin",
     "dev": "npm run dev --prefix apps/client",
     "dev:client": "npm run dev --prefix apps/client",
     "dev:kds": "npm run dev --prefix apps/kitchen",
     "dev:kitchen": "npm run dev --prefix apps/kitchen",
     "dev:analytics": "npm run dev --prefix apps/analytics",
-    "server": "npm start --prefix services/sync",
-    "build": "npm run build --prefix apps/client && npm run build --prefix apps/kitchen && npm run build --prefix apps/analytics",
+    "server": "npm run start:dev --prefix services/sync",
+    "build": "npm run build --prefix apps/client && npm run build --prefix apps/kitchen && npm run build --prefix apps/analytics && npm run build --prefix apps/admin",
     "check": "npm run check --prefix services/sync",
     "test": "npm test --prefix services/sync",
     "preview": "npm run preview --prefix apps/client",
-    "test:integration": "node scripts/check-integration.mjs"
+    "test:integration": "node scripts/check-integration.mjs",
+    "dev:admin": "npm run dev --prefix apps/admin",
+    "server:prod": "npm run start:prod --prefix services/sync",
+    "env:setup": "node scripts/setup-env.mjs"
   }
 }

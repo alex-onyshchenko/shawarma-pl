@@ -3,4 +3,14 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.dev.example
+!.env.prod.example
 .DS_Store
+
+# Runtime databases, SQLite sidecar files and local backups
+data/
+backups/
+*.sqlite*
+*.db
+*.db-*
+*.db.bak

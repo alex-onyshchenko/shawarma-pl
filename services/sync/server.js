@@ -1,142 +1,58 @@
 import http from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { createStore, hoursForPoint, quoteOrder, DEMO_POINT_ID } from './store.js';
+import { createAdminHandler } from './admin.js';
+import { DEFAULT_HOURS, MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming } from './timing.js';
 
 const PORT = Number(process.env.PORT || 3002);
 const HOST = process.env.HOST || '0.0.0.0';
-
-// In-memory store initialized with realistic orders
-let orders = [
-  {
-    id: '1042',
-    time: '11:42',
-    createdAt: Date.now() - 2 * 60 * 1000,
-    status: 'new', // new | cooking | ready | archived
-    orderType: 'pickup',
-    customerName: 'Олександр (Telegram)',
-    phoneNumber: '+380 (97) 123-45-67',
-    totalPrice: 180,
-    items: [
-      {
-        name: 'Класична Шаурма',
-        qty: 2,
-        lavash: 'Сирний лаваш',
-        spiciness: 'Пікантна 🌶️',
-        added: ['Сир Чеддер'],
-        removed: ['Без цибулі'],
-        comment: 'Більше соусу, будь ласка'
-      }
-    ]
-  },
-  {
-    id: '1043',
-    time: '11:45',
-    createdAt: Date.now() - 45 * 1000,
-    status: 'new',
-    orderType: 'delivery',
-    customerName: 'Марія (Telegram)',
-    phoneNumber: '+380 (50) 987-65-43',
-    totalPrice: 240,
-    deliveryAddress: 'вул. Антоновича, 74, кв. 12',
-    items: [
-      {
-        name: 'Гостра Шаурма BBQ',
-        qty: 1,
-        lavash: 'Звичайний лаваш',
-        spiciness: 'Вогонь! 🔥🌶️',
-        added: ['Халапеньйо', 'Подвійне м\'ясо на вугіллі'],
-        removed: [],
-        comment: ''
-      },
-      {
-        name: 'Картопля Фрі з сіллю',
-        qty: 1,
-        lavash: null,
-        spiciness: null,
-        added: [],
-        removed: [],
-        comment: ''
-      }
-    ]
-  },
-  {
-    id: '1039',
-    time: '11:30',
-    createdAt: Date.now() - 15 * 60 * 1000, // 15 mins ago (overdue)
-    status: 'cooking',
-    orderType: 'pickup',
-    customerName: 'Дмитро (Telegram)',
-    phoneNumber: '+380 (63) 555-12-34',
-    totalPrice: 215,
-    items: [
-      {
-        name: 'Сирна Шаурма',
-        qty: 1,
-        lavash: 'Шпинатний лаваш',
-        spiciness: null,
-        added: ['Хрусткий бекон гриль'],
-        removed: ['Без часникового соусу', 'Без капусти'],
-        comment: 'Добре підрум\'янити на грилі'
-      }
-    ]
-  }
-];
-
-// --- Helper to generate rich mock historical data ---
-function generateMockArchivedOrders() {
-  const products = [
-    { name: 'Класична Шаурма', price: 150 },
-    { name: 'Сирна Шаурма', price: 180 },
-    { name: 'Гостра Шаурма BBQ', price: 170 },
-    { name: 'М\'ясна Шаурма Де Люкс', price: 210 },
-    { name: 'Картопля Фрі з сіллю', price: 70 },
-    { name: 'Сирні кульки', price: 90 },
-    { name: 'Кола 0.5', price: 40 },
-    { name: 'Сік Апельсиновий', price: 45 },
-  ];
-  const names = ['Олег', 'Марія', 'Дмитро', 'Аліна', 'Сергій', 'Катерина', 'Андрій', 'Юлія', 'Тарас', 'Оксана'];
-  const types = ['pickup', 'pickup', 'pickup', 'delivery'];
-  const archived = [];
-  let idCounter = 900;
-  const now = Date.now();
-
-  for (let daysAgo = 30; daysAgo >= 1; daysAgo--) {
-    const ordersPerDay = Math.floor(8 + Math.random() * 18 + (30 - daysAgo) * 0.3);
-    for (let i = 0; i < ordersPerDay; i++) {
-      const itemCount = Math.floor(1 + Math.random() * 3);
-      const items = [];
-      let total = 0;
-      for (let j = 0; j < itemCount; j++) {
-        const p = products[Math.floor(Math.random() * products.length)];
-        const qty = Math.floor(1 + Math.random() * 2);
-        items.push({ name: p.name, qty, lavash: null, spiciness: null, added: [], removed: [], comment: '' });
-        total += p.price * qty;
-      }
-      const hour = Math.floor(10 + Math.random() * 11);
-      const minute = Math.floor(Math.random() * 60);
-      const dayTs = now - daysAgo * 86400000 + (hour * 3600 + minute * 60) * 1000;
-      const name = names[Math.floor(Math.random() * names.length)];
-      archived.push({
-        id: String(idCounter++),
-        time: `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`,
-        createdAt: dayTs,
-        completedAt: `${String(hour).padStart(2,'0')}:${String(minute+8).padStart(2,'0')}`,
-        status: 'archived',
-        orderType: types[Math.floor(Math.random() * types.length)],
-        customerName: `${name} (Telegram)`,
-        phoneNumber: '+380 (97) 000-00-00',
-        totalPrice: total,
-        items,
-      });
-    }
-  }
-  return archived;
+const seedHours = {
+  ...DEFAULT_HOURS,
+  timeZone: process.env.STORE_TIMEZONE || DEFAULT_HOURS.timeZone,
+  openHour: Number(process.env.OPEN_HOUR ?? 10),
+  closeHour: Number(process.env.CLOSE_HOUR ?? 22),
+};
+if (!Number.isInteger(seedHours.openHour) || !Number.isInteger(seedHours.closeHour) || seedHours.openHour < 0 || seedHours.closeHour > 24 || seedHours.openHour >= seedHours.closeHour) {
+  throw new Error('OPEN_HOUR/CLOSE_HOUR must be integers with 0 <= OPEN_HOUR < CLOSE_HOUR <= 24');
+}
+const adminToken = process.env.ADMIN_TOKEN || '';
+const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url)), seedHours);
+function availability() {
+  const serverNow = Date.now();
+  const point = store.activePoint();
+  const hours = hoursForPoint(point, serverNow);
+  const slots = getSlots(serverNow, hours);
+  const acceptingOrders = point.acceptingOrders && !point.onBreak;
+  return { ...hours, point, serverNow, slots, manualSlots: getManualSlots(serverNow), cafeOpen: point.acceptingOrders, onBreak: point.onBreak, acceptingOrders, asapAvailable: acceptingOrders && asapAvailable(serverNow, hours) };
+}
+function json(res, code, body) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(body));
+}
+function announce(order) {
+  broadcast('order_status_updated', { id: order.id, status: order.status, order });
+}
+function confirmationMessage(order) {
+  const at = formatTime(order.confirmedReadyAt, order.timeZone);
+  const payment = order.paymentStatus === 'cash_due' ? 'Оплата готівкою при отриманні.' : 'Усе оплачено (демо).';
+  if (order.kitchenDelayMinutes > 0) return `⚠️ Замовлення #${order.id} вже в черзі! На кухні зараз дуже багато чеків, тому нам знадобиться трохи більше часу, щоб приготувати все ідеально. ⏱ Новий час вашої видачі: ${at}. Дякуємо за розуміння!`;
+  if (order.timingMode === 'scheduled') return `🎯 Замовлення #${order.id} прийнято! ${payment} Почнемо готувати так, щоб віддати з пилу з жару рівно о ${at}. Чекаємо на вас!`;
+  return `✅ Ваше замовлення #${order.id} ${order.paymentStatus === 'cash_due' ? 'прийнято!' : 'успішно оплачено (демо)!'} Кухня підтвердила час. ⏳ Орієнтовний час видачі: ${at} (~${Math.ceil((order.confirmedReadyAt - order.createdAt) / MINUTE)} хв). Ми надішлемо повідомлення, коли все буде готово!`;
 }
 
-let archivedOrders = generateMockArchivedOrders();
+
+// Empty by default; real orders are restored from SQLite without generating demo history.
+const savedOrders = store.get('orders');
+let orders = savedOrders?.orders || [];
+let archivedOrders = savedOrders?.archivedOrders || [];
+let nextOrderId = savedOrders?.nextOrderId || 1000;
+if (!savedOrders) store.set('orders', { orders, archivedOrders, nextOrderId });
 
 // SSE (Server-Sent Events) clients registry
 const sseClients = new Set();
 
 function broadcast(eventType, payload) {
+  if (['new_order', 'order_status_updated', 'reset'].includes(eventType)) store.set('orders', { orders, archivedOrders, nextOrderId });
   const message = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
   console.log(`[BROADCAST] ${eventType} to ${sseClients.size} client(s)`);
   for (const res of sseClients) {
@@ -152,7 +68,12 @@ function broadcast(eventType, payload) {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > 1024 * 1024) { reject(Object.assign(new Error('Запит завеликий'), { status: 413 })); return; }
+      body += chunk;
+    });
     req.on('end', () => {
       try {
         resolve(body ? JSON.parse(body) : {});
@@ -164,13 +85,21 @@ function readJsonBody(req) {
   });
 }
 
+const adminHandler = createAdminHandler({
+  store, readJsonBody, adminToken,
+  readOrders: () => [...orders, ...archivedOrders],
+  onChange: () => { broadcast('menu_updated', store.publicMenu()); broadcast('availability_updated', availability()); },
+});
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
   console.log(`[REQ ${new Date().toLocaleTimeString()}] ${req.method} ${pathname}`);
 
-  // CORS headers for all origins
+  if (pathname.startsWith('/api/admin/')) { await adminHandler(req, res, url); return; }
+
+  // CORS headers for public API
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -187,6 +116,37 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (pathname === '/api/menu' && req.method === 'GET') { json(res, 200, store.publicMenu()); return; }
+  if (pathname === '/api/points' && req.method === 'GET') { json(res, 200, { points: [store.activePoint()] }); return; }
+
+  if (pathname === '/api/availability' && req.method === 'GET') {
+    json(res, 200, availability());
+    return;
+  }
+  if (pathname === '/api/settings' && req.method === 'PATCH') {
+    try {
+      const data = await readJsonBody(req);
+      if (!('acceptingOrders' in data) && !('onBreak' in data)) throw new Error('Вкажіть статус кафе або обідньої перерви');
+      const current = store.activePoint();
+      const changes = {};
+      if ('acceptingOrders' in data) {
+        if (typeof data.acceptingOrders !== 'boolean') throw new Error('acceptingOrders must be boolean');
+        changes.acceptingOrders = data.acceptingOrders;
+        changes.onBreak = false;
+      }
+      if ('onBreak' in data) {
+        if (typeof data.onBreak !== 'boolean') throw new Error('onBreak must be boolean');
+        if (data.onBreak && !(changes.acceptingOrders ?? current.acceptingOrders)) { json(res, 409, { error: 'Спочатку відчиніть кафе' }); return; }
+        changes.onBreak = data.onBreak;
+      }
+      store.updatePoint(DEMO_POINT_ID, changes);
+      const state = availability();
+      broadcast('availability_updated', state);
+      json(res, 200, state);
+    } catch (error) { json(res, 400, { error: error.message }); }
+    return;
+  }
+
   // 1. SSE Connection Endpoint: /api/events
   if (pathname === '/api/events' && req.method === 'GET') {
     res.writeHead(200, {
@@ -196,7 +156,7 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Origin': '*'
     });
 
-    res.write(`event: init\ndata: ${JSON.stringify({ orders, archivedOrders })}\n\n`);
+    res.write(`event: init\ndata: ${JSON.stringify({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() })}\n\n`);
     sseClients.add(res);
     console.log(`[SSE CONNECTED] Active clients: ${sseClients.size}`);
 
@@ -210,33 +170,59 @@ const server = http.createServer(async (req, res) => {
   // 2. GET /api/orders - list current active orders
   if (pathname === '/api/orders' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ orders, archivedOrders }));
+    res.end(JSON.stringify({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() }));
     return;
   }
 
-  // 3. POST /api/orders - create a new order (from Telegram Mini App or Demo button)
-  if (pathname === '/api/orders' && req.method === 'POST') {
+  // Kitchen creation uses the same validation, with an atomically confirmed deadline.
+  if (['/api/orders', '/api/kitchen/orders'].includes(pathname) && req.method === 'POST') {
+    const manual = pathname === '/api/kitchen/orders';
     try {
       const data = await readJsonBody(req);
-      const newId = data.id || String(Math.floor(1044 + Math.random() * 50));
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+      const duplicate = data.clientRequestId && [...orders, ...archivedOrders].find(o => o.clientRequestId === data.clientRequestId);
+      if (duplicate) { json(res, 200, { success: true, order: duplicate }); return; }
+      const cafe = store.activePoint();
+      if (!manual && (!cafe.acceptingOrders || cafe.onBreak)) { json(res, 409, { error: cafe.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено', code: cafe.onBreak ? 'LUNCH_BREAK' : 'ORDERS_PAUSED' }); return; }
+      if (!Array.isArray(data.items) || !data.items.length) throw new Error('Замовлення не може бути порожнім');
+      if (data.paymentMethod && data.paymentMethod !== 'cash') { json(res, 409, { error: 'Наразі доступна лише оплата при отриманні' }); return; }
+      if (data.napkins !== undefined && typeof data.napkins !== 'boolean') { json(res, 400, { error: 'Перевірте вибір серветок' }); return; }
+      const quote = quoteOrder(store, data);
+      const createdAt = Date.now();
+      const timing = manual ? normalizeManualTiming(data, createdAt) : normalizeTiming(data, createdAt, hoursForPoint(store.activePoint(), createdAt));
+      const newId = data.id ? String(data.id) : String(nextOrderId++);
+      if ([...orders, ...archivedOrders].some(o => o.id === newId)) { json(res, 409, { error: 'Замовлення з таким ID вже існує' }); return; }
+      const timeStr = formatTime(createdAt, store.activePoint().timeZone);
 
       const newOrder = {
         id: newId,
-        time: data.time || timeStr,
-        createdAt: data.createdAt || Date.now(),
+        time: timeStr,
+        createdAt,
         status: 'new',
+        ...timing,
+        timeZone: store.activePoint().timeZone,
+        clientRequestId: data.clientRequestId || null,
+        source: manual ? 'kitchen' : 'client',
+        confirmedReadyAt: manual ? timing.baselineReadyAt : null,
+        acceptedAt: manual ? createdAt : null,
+        kitchenDelayMinutes: 0,
+        paymentMethod: 'cash',
+        paymentStatus: 'cash_due',
+        paymentSimulation: true,
+        paidAt: null,
+        cutlery: false,
+        napkins: data.napkins ?? true,
+        notification: 'Замовлення оформлено. Очікуємо підтвердження часу кухнею.',
         orderType: data.orderType || 'pickup',
         customerName: data.customerName || 'Telegram Замовник',
-        phoneNumber: data.phoneNumber || '+380 (97) 123-45-67',
+        phoneNumber: typeof data.phoneNumber === 'string' ? data.phoneNumber.trim().slice(0, 50) : '',
         totalPrice: data.totalPrice || data.finalTotal || 0,
         deliveryAddress: data.deliveryAddress || null,
         selectedLocation: data.selectedLocation || null,
         orderComment: data.orderComment || '',
-        items: data.items || []
+        ...quote
       };
 
+      if (manual) newOrder.notification = confirmationMessage(newOrder);
       orders.unshift(newOrder);
       console.log(`[NEW ORDER CREATED] #${newOrder.id} - ${newOrder.customerName} - ${newOrder.items.length} item(s)`);
 
@@ -247,9 +233,31 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ success: true, order: newOrder }));
     } catch (err) {
       console.error('[POST /api/orders error]', err);
-      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.writeHead(err.status || 400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
+    return;
+  }
+
+  const acceptMatch = pathname.match(/^\/api\/orders\/([^/]+)\/accept$/);
+  if (acceptMatch && req.method === 'POST') {
+    try {
+      const order = orders.find(o => o.id === decodeURIComponent(acceptMatch[1]));
+      if (!order) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      const { delayMinutes } = await readJsonBody(req);
+      if (![0, 5, 10, 15].includes(delayMinutes)) throw new Error('Доступний зсув: 0, 5, 10 або 15 хвилин');
+      if (order.acceptedAt) {
+        if (order.kitchenDelayMinutes === delayMinutes) { json(res, 200, { success: true, order }); return; }
+        json(res, 409, { error: 'Час уже підтверджено. Повторний зсув недоступний' }); return;
+      }
+      if (order.status !== 'new') { json(res, 409, { error: 'Підтвердити можна лише нове замовлення' }); return; }
+      order.kitchenDelayMinutes = delayMinutes;
+      order.confirmedReadyAt = order.baselineReadyAt + delayMinutes * MINUTE;
+      order.acceptedAt = Date.now();
+      order.notification = confirmationMessage(order);
+      announce(order);
+      json(res, 200, { success: true, order });
+    } catch (error) { json(res, 400, { error: error.message }); }
     return;
   }
 
@@ -257,8 +265,8 @@ const server = http.createServer(async (req, res) => {
   const statusMatch = pathname.match(/^\/api\/orders\/([^/]+)\/status$/);
   if (statusMatch && req.method === 'PATCH') {
     try {
-      const orderId = statusMatch[1];
-      const { status } = await readJsonBody(req);
+      const orderId = decodeURIComponent(statusMatch[1]);
+      const { status, confirmEarly } = await readJsonBody(req);
 
       console.log(`[STATUS UPDATE] Order #${orderId} -> ${status}`);
 
@@ -268,7 +276,8 @@ const server = http.createServer(async (req, res) => {
         // Check if restoring from archived
         const archIndex = archivedOrders.findIndex(o => o.id === orderId);
         if (archIndex > -1) {
-          const restored = { ...archivedOrders[archIndex], status: 'ready' };
+          const archived = archivedOrders[archIndex];
+          const restored = { ...archived, status: 'ready', timingMode: archived.timingMode || 'asap', acceptedAt: archived.acceptedAt || Date.now(), confirmedReadyAt: archived.confirmedReadyAt || Date.now() };
           archivedOrders.splice(archIndex, 1);
           orders.push(restored);
           broadcast('order_status_updated', { id: orderId, status: 'ready', order: restored });
@@ -285,11 +294,23 @@ const server = http.createServer(async (req, res) => {
       }
 
       const order = orders[orderIndex];
+      const transitions = { new: ['cooking'], cooking: ['new', 'ready'], ready: ['cooking', 'archived'] };
+      if (status === order.status) { json(res, 200, { success: true, order }); return; }
+      if (!transitions[order.status]?.includes(status)) { json(res, 409, { error: 'Недозволена зміна статусу' }); return; }
+      if (!order.acceptedAt) { json(res, 409, { error: 'Спочатку підтвердьте час видачі' }); return; }
+      if (['cooking', 'ready'].includes(status) && earlyStart(order, Date.now()) && confirmEarly !== true) {
+        json(res, 409, { code: 'EARLY_START', error: 'Це замовлення на майбутнє. Підтвердьте раннє приготування', readyAt: order.confirmedReadyAt }); return;
+      }
+      if (['cooking', 'ready'].includes(status) && earlyStart(order, Date.now()) && confirmEarly === true) order.earlyStartConfirmedAt = Date.now();
+      if (status === 'cooking') { order.cookingStartedAt = Date.now(); order.notification = '🔥 Кухар почав готувати ваше замовлення!'; }
+      if (status === 'new') order.notification = 'Замовлення в черзі. Час видачі підтверджено.';
+      if (status === 'ready') order.notification = '🎉 Ваше замовлення готове до видачі!';
 
       if (status === 'archived') {
         const completed = {
           ...order,
           status: 'archived',
+          notification: '✅ Замовлення видано. Смачного!',
           completedAt: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
         };
         orders.splice(orderIndex, 1);
@@ -307,16 +328,17 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, order }));
     } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.writeHead(err.status || 400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
     return;
   }
 
-  // 5. POST /api/reset - reset to initial state
+  // 5. POST /api/reset - clear active and archived orders, preserving the ID sequence
   if (pathname === '/api/reset' && req.method === 'POST') {
-    archivedOrders = generateMockArchivedOrders();
-    broadcast('reset', { orders });
+    orders = [];
+    archivedOrders = [];
+    broadcast('reset', { orders, archivedOrders });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
     return;

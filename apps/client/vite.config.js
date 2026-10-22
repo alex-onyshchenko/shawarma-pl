@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), '');
+  if (process.env.VERCEL) {
+    let api;
+    try { api = new URL(env.VITE_SYNC_API_URL); } catch { /* Report configuration below. */ }
+    if (!api || api.protocol !== 'https:' || /^(localhost|127\.|\[::1\])/.test(api.hostname) || api.username || api.password || api.search || api.hash || api.pathname !== '/') {
+      throw new Error('Set VITE_SYNC_API_URL to the public HTTPS origin of Sync, e.g. https://sync.your-domain.com (without /api). See DEPLOYMENT.md.');
+    }
+  }
   const proxy = {
     '/api': {
       target: env.SYNC_API_TARGET || 'http://127.0.0.1:3002',

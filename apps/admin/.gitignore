@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.dev.example
+!.env.prod.example
+.DS_Store

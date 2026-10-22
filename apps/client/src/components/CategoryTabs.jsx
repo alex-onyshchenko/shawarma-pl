@@ -3,7 +3,7 @@ import { tg } from '../utils/telegram';
 
 export default function CategoryTabs({ categories, activeCategory, onSelectCategory, productsCountByCategory }) {
   return (
-    <div className="sticky top-[57px] z-20 bg-zinc-950/95 backdrop-blur-md pt-3 pb-2 px-4 border-b border-zinc-900/80">
+    <div className="sticky top-[calc(64px+var(--app-safe-top))] z-20 bg-zinc-950/95 backdrop-blur-md pt-3 pb-2 px-4 border-b border-zinc-900/80">
       <div className="flex gap-2 overflow-x-auto no-scrollbar scroll-smooth">
         {categories.map(cat => {
           const isActive = activeCategory === cat.name;

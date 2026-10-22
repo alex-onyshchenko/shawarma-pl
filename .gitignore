@@ -3,7 +3,18 @@ dist
 dist-ssr
 *.local
 .DS_Store
+.vercel/
 
 .env
 .env.*
 !.env.example
+!.env.dev.example
+!.env.prod.example
+
+# Runtime databases, SQLite sidecar files and local backups
+data/
+*.sqlite*
+*.db
+*.db-*
+*.db.bak
+/services/sync/backups/

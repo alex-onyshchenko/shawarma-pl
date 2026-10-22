@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ShoppingBag, Search, Sparkles, Flame, Check, X, Smartphone, Monitor } from 'lucide-react';
-import { CATEGORIES, PRODUCTS } from './data/menuData';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ShoppingBag } from 'lucide-react';
 import { tg } from './utils/telegram';
 import TelegramHeader from './components/TelegramHeader';
 import CategoryTabs from './components/CategoryTabs';
@@ -9,31 +8,78 @@ import ModifierModal from './components/ModifierModal';
 import CheckoutView from './components/CheckoutView';
 import OrderSuccessModal from './components/OrderSuccessModal';
 import AboutModal from './components/AboutModal';
+import CafeStatus from './components/CafeStatus';
 import { orderSync } from './utils/orderSync';
 
+function savedOrder() {
+  try { return JSON.parse(localStorage.getItem('shawarma_active_order') || 'null'); } catch { return null; }
+}
+
 export default function App() {
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].name);
+  const requestRef = useRef(null);
+  const [activeCategory, setActiveCategory] = useState('');
+  const [menu, setMenu] = useState(null);
+  const [menuError, setMenuError] = useState('');
+  const [availability, setAvailability] = useState(null);
+  const products = menu?.products || [];
+  const categories = (menu?.categories || []).filter(category => ['Шаурма', 'Напої'].includes(category.name));
   const [cart, setCart] = useState([]);
   const [view, setView] = useState('menu'); // 'menu' | 'checkout' | 'order-status'
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isMockupMode, setIsMockupMode] = useState(true);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [lastPlacedOrder, setLastPlacedOrder] = useState(null);
+  const [lastPlacedOrder, setLastPlacedOrder] = useState(savedOrder);
   const [toastMessage, setToastMessage] = useState(null);
   const [user, setUser] = useState(null);
+  const canAddToCart = availability?.acceptingOrders === true;
+  const orderingUnavailableLabel = !availability ? 'Уточнюємо статус…' : availability.onBreak ? 'Обідня перерва' : 'Кафе зачинено';
+
+  const applyMenu = data => {
+    if (!data) return;
+    setMenu(data);
+    setMenuError('');
+    const availableCategories = data.categories.filter(category => ['Шаурма', 'Напої'].includes(category.name));
+    setActiveCategory(previous => availableCategories.some(category => category.name === previous) ? previous : availableCategories[0]?.name || '');
+  };
+  const refreshMenu = async () => {
+    try { applyMenu(await orderSync.getMenu()); } catch { setMenuError('Не вдалося завантажити меню. Перевірте з’єднання.'); }
+  };
+  useEffect(() => {
+    refreshMenu();
+    return orderSync.subscribe({
+      onInit: data => { applyMenu(data.menu); if (data.availability) setAvailability(data.availability); },
+      onMenu: applyMenu,
+      onAvailability: setAvailability,
+    });
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    setCart(previous => previous.map(item => {
+      const product = menu.products.find(product => product.id === item.product.id);
+      const size = product?.sizes?.find(size => size.id === item.size?.id);
+      const added = item.addedModifiers.map(mod => menu.modifiers.add.find(value => value.id === mod.id));
+      const removed = item.removedModifiers.map(mod => menu.modifiers.remove.find(value => value.id === mod.id));
+      const spiciness = item.spiciness && menu.modifiers.spiciness.find(value => value.level === item.spiciness.level);
+      const lavash = item.lavash && menu.modifiers.lavash.find(value => value.id === item.lavash.id);
+      const unavailableReason = !product || !product.available ? 'Товар тимчасово недоступний' : ((product.sizes?.length || item.size) && !size) ? 'Розмір недоступний. Додайте товар ще раз' : added.some(value => !value) || removed.some(value => !value) || (item.lavash && !lavash) || (item.spiciness && !spiciness) || (!product.hasModifiers && (added.length || removed.length || lavash)) ? 'Склад змінився. Видаліть товар і додайте його ще раз' : '';
+      if (unavailableReason) return { ...item, unavailableReason };
+      return { ...item, product, size: size || null, addedModifiers: added, removedModifiers: removed, spiciness: spiciness || null, lavash: lavash || null, unitPrice: Math.round(((size?.price ?? product.price) + (lavash?.price || 0) + added.reduce((sum, mod) => sum + mod.price, 0)) * 100) / 100, unavailableReason: '' };
+    }));
+  }, [menu]);
 
   // Initialize Telegram WebApp SDK
   useEffect(() => {
     tg.init();
     setUser(tg.getUser());
-
-    // If running directly inside native Telegram Mini App on mobile, auto-disable mockup container
-    if (tg.isAvailable) {
-      setIsMockupMode(false);
-    }
   }, []);
+
+  useEffect(() => {
+    const back = tg.isAvailable ? tg.webApp.BackButton : null;
+    if (!back) return;
+    const goToMenu = () => setView('menu');
+    if (view === 'menu') back.hide(); else back.show();
+    back.onClick(goToMenu);
+    return () => { back.offClick(goToMenu); back.hide(); };
+  }, [view]);
 
   // Show temporary toast message
   const triggerToast = (msg) => {
@@ -43,33 +89,20 @@ export default function App() {
     }, 2200);
   };
 
-  // Filter products by category and search
-  const filteredProducts = useMemo(() => {
-    let list = PRODUCTS;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      return list.filter(
-        p =>
-          p.name.toLowerCase().includes(q) ||
-          p.description.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q)
-      );
-    }
-    return list.filter(p => p.category === activeCategory);
-  }, [activeCategory, searchQuery]);
+  const filteredProducts = useMemo(() => products.filter(product => product.category === activeCategory), [activeCategory, products]);
 
   // Products count per category
   const productsCountByCategory = useMemo(() => {
     const counts = {};
-    PRODUCTS.forEach(p => {
+    products.forEach(p => {
       counts[p.category] = (counts[p.category] || 0) + 1;
     });
     return counts;
-  }, []);
+  }, [products]);
 
   // Cart calculations
   const cartTotal = useMemo(() => {
-    return cart.reduce((total, item) => total + item.unitPrice * item.quantity, 0);
+    return Math.round(cart.reduce((total, item) => total + item.unitPrice * item.quantity, 0) * 100) / 100;
   }, [cart]);
 
   const cartItemsCount = useMemo(() => {
@@ -88,6 +121,8 @@ export default function App() {
   // Add customized item from ModifierModal
   const handleAddCustomizedItem = ({
     product,
+    size,
+    toastingLevel,
     quantity,
     lavash,
     spiciness,
@@ -95,13 +130,16 @@ export default function App() {
     removedModifiers,
     comment,
   }) => {
+    if (!canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
     const unitPrice =
-      product.price +
+      (size?.price ?? product.price) +
       (lavash?.price || 0) +
       addedModifiers.reduce((sum, mod) => sum + mod.price, 0);
 
     const configKey = JSON.stringify({
       productId: product.id,
+      sizeId: size?.id,
+      toastingLevel,
       lavashId: lavash?.id,
       spicinessLevel: spiciness?.level,
       addedIds: addedModifiers.map(m => m.id).sort(),
@@ -122,6 +160,8 @@ export default function App() {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
           configKey,
           product,
+          size,
+          toastingLevel,
           quantity,
           unitPrice,
           lavash,
@@ -140,6 +180,7 @@ export default function App() {
 
   // Quick add without modifiers
   const handleQuickAdd = (product) => {
+    if (!canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
     const configKey = JSON.stringify({ productId: product.id });
     const existingIndex = cart.findIndex(item => item.configKey === configKey);
 
@@ -170,6 +211,7 @@ export default function App() {
 
   // Update item quantity in checkout
   const handleUpdateQuantity = (itemId, delta) => {
+    if (delta > 0 && !canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
     setCart(prev => {
       return prev
         .map(item => {
@@ -197,157 +239,95 @@ export default function App() {
   };
 
   // Order submission
-  const handlePlaceOrder = (orderData) => {
+  const handlePlaceOrder = async (orderData) => {
     const kdsOrder = {
-      id: String(Math.floor(1044 + Math.random() * 50)),
       time: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }),
       createdAt: Date.now(),
       status: 'new',
+      pointId: menu.point.id,
+      expectedTotal: orderData.finalTotal,
+      timingMode: orderData.timingMode,
+      requestedReadyAt: orderData.requestedReadyAt,
+      paymentMethod: orderData.paymentMethod,
+      napkins: orderData.napkins,
       orderType: orderData.deliveryType,
       customerName: user?.first_name ? `${user.first_name} (Telegram)` : 'Клієнт Telegram',
       phoneNumber: orderData.phoneNumber,
       totalPrice: orderData.finalTotal,
-      deliveryAddress: orderData.deliveryAddress,
       selectedLocation: orderData.selectedLocation,
-      orderComment: orderData.orderComment,
       items: orderData.cart.map(item => ({
+        productId: item.product.id,
+        sizeId: item.size?.id || null,
+        toastingLevel: item.toastingLevel || null,
+        lavashId: item.lavash?.id || null,
+        addedModifierIds: item.addedModifiers.map(mod => mod.id),
+        removedModifierIds: item.removedModifiers.map(mod => mod.id),
+        spicinessLevel: item.spiciness?.level ?? 0,
         name: item.product.name,
         qty: item.quantity,
         lavash: item.lavash?.name || null,
         spiciness: item.spiciness?.label || null,
         added: (item.addedModifiers || []).map(m => m.name),
         removed: (item.removedModifiers || []).map(m => m.name),
-        comment: item.comment || orderData.orderComment || ''
+        comment: item.comment || ''
       }))
     };
 
     // Broadcast across all connected KDS screens
-    orderSync.createOrder(kdsOrder);
-
-    setLastPlacedOrder(kdsOrder);
+    // Reuse the request key after an unknown network result, even if the displayed slot advanced.
+    requestRef.current ||= crypto.randomUUID();
+    let accepted;
+    try { accepted = await orderSync.createOrder({ ...kdsOrder, clientRequestId: requestRef.current }); }
+    catch (error) { if (error.status === 409) await refreshMenu(); throw error; }
+    requestRef.current = null;
+    try { localStorage.setItem('shawarma_active_order', JSON.stringify(accepted)); } catch {}
+    setLastPlacedOrder(accepted);
     setCart([]);
     setView('order-status');
   };
 
   // Reset to menu for new order
   const handleResetToMenu = () => {
+    try { localStorage.removeItem('shawarma_active_order'); } catch {}
     setLastPlacedOrder(null);
     setView('menu');
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white font-sans selection:bg-orange-500 selection:text-white flex flex-col items-center justify-start p-0 md:p-6 transition-colors">
-      {/* Desktop Helper Bar */}
-      <div className="hidden md:flex items-center justify-between w-full max-w-md mb-3 px-2 text-xs text-zinc-400">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Telegram Mini App Simulator</span>
-        </div>
-        <button
-          onClick={() => setIsMockupMode(!isMockupMode)}
-          className="flex items-center gap-1.5 hover:text-white bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg transition-colors"
-        >
-          {isMockupMode ? <Monitor size={13} /> : <Smartphone size={13} />}
-          <span>{isMockupMode ? 'Повний екран' : 'Смартфон-рамка'}</span>
-        </button>
-      </div>
-
-      {/* Main Container / Mobile Mockup Frame */}
-      <div
-        className={`w-full transition-all duration-300 relative flex flex-col bg-zinc-950 min-h-screen ${
-          isMockupMode
-            ? 'max-w-md md:my-3 md:rounded-[36px] md:shadow-2xl md:border-2 md:border-zinc-800'
-            : 'max-w-2xl border-x border-zinc-900'
-        }`}
-      >
+    <div className="app-shell bg-zinc-950 text-white font-sans selection:bg-orange-500 selection:text-white">
+      <div className="app-content w-full max-w-2xl mx-auto relative flex flex-col">
         {/* Telegram Header */}
         <TelegramHeader
+          pointName={menu?.point.name}
           view={view}
           setView={setView}
           cartCount={cartItemsCount}
           onClearCart={handleClearCart}
-          isMockupMode={isMockupMode}
-          setIsMockupMode={setIsMockupMode}
           onOpenAbout={() => setAboutOpen(true)}
         />
 
         {/* Scrollable View Content */}
-        <main className="flex-1 overflow-y-auto no-scrollbar relative flex flex-col">
+        <main className="flex-1 relative flex flex-col">
           {view === 'menu' && (
             <>
-              {/* Promo Banner */}
-              <div className="p-4 pb-2">
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600 via-amber-600 to-red-600 p-4 text-white shadow-lg">
-                  <div className="relative z-10 flex justify-between items-center">
-                    <div>
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-200 uppercase tracking-wide">
-                        <Flame size={14} className="fill-amber-200" />
-                        <span>Справжній мангал</span>
-                      </div>
-                      <h2 className="text-xl font-black mt-0.5 tracking-tight">
-                        Шаурма на Вугіллі 🌯
-                      </h2>
-                      <p className="text-xs text-orange-100 mt-1 max-w-[240px]">
-                        М'ясо маринується 24 години та смажиться на живому жарі!
-                      </p>
-                    </div>
-                    <div className="text-4xl filter drop-shadow-md select-none animate-pulse-subtle">
-                      🔥
-                    </div>
-                  </div>
-
-                  {/* Discount tag badge */}
-                  <div className="mt-3 inline-flex items-center gap-1.5 bg-black/30 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-semibold text-white border border-white/10">
-                    <Sparkles size={12} className="text-amber-300" />
-                    <span>Знижка 10% на самовивіз</span>
-                  </div>
-                </div>
+              {!menu && <p className="p-4 text-zinc-400 text-sm">Завантажуємо меню…</p>}
+              {menuError && <div role="alert" className="p-4 text-red-300 text-sm">{menuError} <button onClick={refreshMenu} className="underline">Спробувати ще раз</button></div>}
+              {menu && <p className="px-4 py-2 text-xs text-zinc-400">📍 {menu.point.address}</p>}
+              <div className="px-4 pt-1 pb-2">
+                <CafeStatus availability={availability} />
               </div>
-
-              {/* Search Bar Toggle */}
-              <div className="px-4 pt-1 pb-1 flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Пошук страви або інгредієнта..."
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-orange-500 transition-colors"
-                  />
-                  <Search size={14} className="absolute left-3 top-2.5 text-zinc-400" />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2.5 top-2 text-zinc-500 hover:text-white"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Category Tabs */}
-              {!searchQuery && (
-                <CategoryTabs
-                  categories={CATEGORIES}
-                  activeCategory={activeCategory}
-                  onSelectCategory={setActiveCategory}
-                  productsCountByCategory={productsCountByCategory}
-                />
-              )}
+              <CategoryTabs
+                categories={categories}
+                activeCategory={activeCategory}
+                onSelectCategory={setActiveCategory}
+                productsCountByCategory={productsCountByCategory}
+              />
 
               {/* Product List */}
               <div className="p-4 flex flex-col gap-3.5 pb-28">
                 {filteredProducts.length === 0 ? (
                   <div className="text-center py-16 text-zinc-500 space-y-2">
-                    <p className="text-3xl">🔍</p>
-                    <p className="text-sm font-medium">Нічого не знайдено за запитом</p>
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="text-xs text-orange-400 hover:underline"
-                    >
-                      Скинути пошук
-                    </button>
+                    <p className="text-sm font-medium">У цій категорії поки немає страв</p>
                   </div>
                 ) : (
                   filteredProducts.map(product => (
@@ -357,6 +337,8 @@ export default function App() {
                       onSelect={setSelectedProduct}
                       onQuickAdd={handleQuickAdd}
                       inCartCount={inCartCounts[product.id] || 0}
+                      orderingDisabled={!canAddToCart}
+                      orderingUnavailableLabel={orderingUnavailableLabel}
                     />
                   ))
                 )}
@@ -366,6 +348,7 @@ export default function App() {
 
           {view === 'checkout' && (
             <CheckoutView
+              point={menu?.point}
               cart={cart}
               onUpdateQuantity={handleUpdateQuantity}
               onRemoveItem={handleRemoveItem}
@@ -385,7 +368,7 @@ export default function App() {
 
         {/* Floating Bottom Cart Bar for Menu View */}
         {view === 'menu' && cartItemsCount > 0 && (
-          <div className="fixed bottom-4 left-4 right-4 max-w-md mx-auto z-30 animate-slide-up">
+          <div className="cart-bar fixed left-4 right-4 max-w-[640px] mx-auto z-30 animate-slide-up">
             <button
               onClick={() => {
                 tg.haptic.impact('medium');
@@ -411,15 +394,18 @@ export default function App() {
         {/* Modifier Modal (Bottom Sheet) */}
         {selectedProduct && (
           <ModifierModal
+            modifiers={menu.modifiers}
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
             onAdd={handleAddCustomizedItem}
+            orderingDisabled={!canAddToCart}
+            orderingUnavailableLabel={orderingUnavailableLabel}
           />
         )}
 
         {/* About Modal */}
         {aboutOpen && (
-          <AboutModal onClose={() => setAboutOpen(false)} />
+          <AboutModal point={menu?.point} onClose={() => setAboutOpen(false)} />
         )}
 
         {/* Toast Notification */}

@@ -137,6 +137,20 @@ export default function TelegramHeader({
                   </button>
                 )}
 
+                <a
+                  href="http://localhost:3001"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-800 text-left transition-colors text-amber-300"
+                >
+                  <span className="text-base">👨‍🍳</span>
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-xs text-white">Термінал кухаря (KDS)</span>
+                    <span className="text-[10px] text-zinc-400">Планшет кухні (порт 3001)</span>
+                  </div>
+                </a>
+
                 <div className="h-px bg-zinc-800 my-1" />
 
                 <button

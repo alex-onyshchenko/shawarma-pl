@@ -197,7 +197,29 @@ export default function App() {
 
   // Order submission
   const handlePlaceOrder = (orderData) => {
-    setLastPlacedOrder(orderData);
+    const kdsOrder = {
+      id: String(Math.floor(1044 + Math.random() * 50)),
+      time: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }),
+      createdAt: Date.now(),
+      status: 'new',
+      orderType: orderData.deliveryType,
+      customerName: user?.first_name ? `${user.first_name} (Telegram)` : 'Клієнт Telegram',
+      items: orderData.cart.map(item => ({
+        name: item.product.name,
+        qty: item.quantity,
+        lavash: item.lavash?.name || null,
+        spiciness: item.spiciness?.label || null,
+        added: (item.addedModifiers || []).map(m => m.name),
+        removed: (item.removedModifiers || []).map(m => m.name),
+        comment: item.comment || orderData.orderComment || ''
+      }))
+    };
+
+    try {
+      localStorage.setItem('shawarma_new_order', JSON.stringify(kdsOrder));
+    } catch (e) {}
+
+    setLastPlacedOrder({ ...orderData, orderId: kdsOrder.id });
     setCart([]);
     setView('order-status');
   };

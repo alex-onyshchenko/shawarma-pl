@@ -9,6 +9,7 @@ MVP работает с **одной активной демо-точкой**. �
 | Telegram Mini App | `apps/client` | 3000 |
 | Терминал кухни | `apps/kitchen` | 3001 |
 | Sync API + SQLite | `services/sync` | 3002 |
+| Telegram Bot webhook | `services/telegram-bot` | 3005 |
 | Аналитика, опционально | `apps/analytics` | 3003 |
 | Админ-панель | `apps/admin` | 3004 |
 
@@ -198,7 +199,7 @@ npm run test:integration
 
 ### Окружения dev / prod
 
-У каждого из пяти сервисов есть `.env.dev` и `.env.prod`. Реальные файлы не коммитятся; в Git хранятся соответствующие `.env.dev.example` и `.env.prod.example`. `npm run env:setup` создаёт отсутствующие файлы, не меняя существующие. `ADMIN_TOKEN` задаётся отдельно в каждом окружении Sync и не попадает во frontend. Production-ключ нужно заполнить перед запуском.
+У каждого из шести сервисов есть `.env.dev` и `.env.prod`. Реальные файлы не коммитятся; в Git хранятся соответствующие `.env.dev.example` и `.env.prod.example`. `npm run env:setup` создаёт отсутствующие файлы, не меняя существующие. `ADMIN_TOKEN` задаётся отдельно в каждом окружении Sync и не попадает во frontend. Production-ключ нужно заполнить перед запуском.
 
 | Действие | Команда | Настройки |
 | --- | --- | --- |
@@ -217,3 +218,10 @@ npm run test:integration
 Dev и prod по умолчанию используют разные SQLite-файлы в одном Docker-томе; переключение на prod не переносит туда dev-данные автоматически. Опубликованному клиенту нужна фактическая HTTPS-адреса API, описанная в инструкции деплоя.
 
 Справка: [Vite modes](https://vite.dev/guide/env-and-mode), [Docker env_file](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/).
+
+
+### Окремий Telegram-бот
+
+`services/telegram-bot` обробляє `/start` і `/help` та повертає кнопку відкриття клієнта. Це незалежний Node.js/Vercel-проєкт без Sync і бази даних. Локальний запуск — `npm run dev:bot`, тести — `npm run test:bot`; Docker-профіль — `bot`. Він не активується у стандартному Compose-запуску. Окремі `.env.dev` / `.env.prod` виключені з Git.
+
+Підпроєкт підготовлений до деплою; реальний Telegram webhook потрібно зареєструвати після створення окремого Vercel-проєкту та заповнення приватних налаштувань. Інструкція: [services/telegram-bot/README.md](services/telegram-bot/README.md).

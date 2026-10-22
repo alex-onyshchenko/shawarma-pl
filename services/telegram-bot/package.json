@@ -1,0 +1,20 @@
+{
+  "name": "@shawarma/telegram-bot",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env.dev --watch server.js",
+    "start": "node --env-file-if-exists=.env.prod server.js",
+    "start:dev": "node --env-file-if-exists=.env.dev server.js",
+    "start:prod": "node --env-file-if-exists=.env.prod server.js",
+    "check": "node --check api/webhook.js && node --check api/health.js && node --check src/config.js && node --check src/handler.js && node --check src/telegram.js && node --check server.js && node --check scripts/webhook.js && node --check src/registration.js",
+    "test": "node --test",
+    "webhook:dev": "node --env-file-if-exists=.env.dev scripts/webhook.js set",
+    "webhook:prod": "node --env-file-if-exists=.env.prod scripts/webhook.js set",
+    "webhook:info": "node --env-file-if-exists=.env.prod scripts/webhook.js info"
+  }
+}

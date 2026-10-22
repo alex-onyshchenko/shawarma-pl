@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "setup": "node scripts/setup-env.mjs && npm ci --prefix apps/client && npm ci --prefix apps/kitchen && npm ci --prefix apps/analytics && npm ci --prefix services/sync && npm ci --prefix apps/admin",
+    "setup": "node scripts/setup-env.mjs && npm ci --prefix apps/client && npm ci --prefix apps/kitchen && npm ci --prefix apps/analytics && npm ci --prefix services/sync && npm ci --prefix apps/admin && npm ci --prefix services/telegram-bot",
     "dev": "npm run dev --prefix apps/client",
     "dev:client": "npm run dev --prefix apps/client",
     "dev:kds": "npm run dev --prefix apps/kitchen",
@@ -12,12 +12,15 @@
     "dev:analytics": "npm run dev --prefix apps/analytics",
     "server": "npm run start:dev --prefix services/sync",
     "build": "npm run build --prefix apps/client && npm run build --prefix apps/kitchen && npm run build --prefix apps/analytics && npm run build --prefix apps/admin",
-    "check": "npm run check --prefix services/sync",
-    "test": "npm test --prefix services/sync",
+    "check": "npm run check --prefix services/sync && npm run check --prefix services/telegram-bot",
+    "test": "npm test --prefix services/sync && npm test --prefix services/telegram-bot",
     "preview": "npm run preview --prefix apps/client",
     "test:integration": "node scripts/check-integration.mjs",
     "dev:admin": "npm run dev --prefix apps/admin",
     "server:prod": "npm run start:prod --prefix services/sync",
-    "env:setup": "node scripts/setup-env.mjs"
+    "env:setup": "node scripts/setup-env.mjs",
+    "dev:bot": "npm run dev --prefix services/telegram-bot",
+    "bot:prod": "npm run start:prod --prefix services/telegram-bot",
+    "test:bot": "npm test --prefix services/telegram-bot"
   }
 }

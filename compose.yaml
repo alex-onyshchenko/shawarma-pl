@@ -59,5 +59,16 @@ services:
       sync:
         condition: service_healthy
 
+  telegram-bot:
+    profiles: ["bot"]
+    build: ./services/telegram-bot
+    env_file:
+      - ./services/telegram-bot/.env.${APP_ENV:-dev}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3005
+    ports:
+      - "3005:3005"
+
 volumes:
   sync-data:

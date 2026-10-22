@@ -1,7 +1,7 @@
 import { copyFile, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 
-const services = ['apps/client', 'apps/kitchen', 'apps/analytics', 'apps/admin', 'services/sync'];
+const services = ['apps/client', 'apps/kitchen', 'apps/analytics', 'apps/admin', 'services/sync', 'services/telegram-bot'];
 for (const service of services) {
   for (const mode of ['dev', 'prod']) {
     const target = new URL(`../${service}/.env.${mode}`, import.meta.url);

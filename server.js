@@ -86,6 +86,7 @@ const sseClients = new Set();
 
 function broadcast(eventType, payload) {
   const message = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
+  console.log(`[BROADCAST] ${eventType} to ${sseClients.size} client(s)`);
   for (const res of sseClients) {
     try {
       res.write(message);
@@ -112,7 +113,12 @@ function readJsonBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  // CORS headers
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = url.pathname;
+
+  console.log(`[REQ ${new Date().toLocaleTimeString()}] ${req.method} ${pathname}`);
+
+  // CORS headers for all origins
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -123,22 +129,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = url.pathname;
-
   // 1. SSE Connection Endpoint: /api/events
   if (pathname === '/api/events' && req.method === 'GET') {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
     });
 
     res.write(`event: init\ndata: ${JSON.stringify({ orders, archivedOrders })}\n\n`);
     sseClients.add(res);
+    console.log(`[SSE CONNECTED] Active clients: ${sseClients.size}`);
 
     req.on('close', () => {
       sseClients.delete(res);
+      console.log(`[SSE DISCONNECTED] Active clients: ${sseClients.size}`);
     });
     return;
   }
@@ -174,6 +180,7 @@ const server = http.createServer(async (req, res) => {
       };
 
       orders.unshift(newOrder);
+      console.log(`[NEW ORDER CREATED] #${newOrder.id} - ${newOrder.customerName} - ${newOrder.items.length} item(s)`);
 
       // Broadcast to all connected clients (KDS tablets + customer apps)
       broadcast('new_order', newOrder);
@@ -181,6 +188,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, order: newOrder }));
     } catch (err) {
+      console.error('[POST /api/orders error]', err);
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
@@ -193,6 +201,8 @@ const server = http.createServer(async (req, res) => {
     try {
       const orderId = statusMatch[1];
       const { status } = await readJsonBody(req);
+
+      console.log(`[STATUS UPDATE] Order #${orderId} -> ${status}`);
 
       const orderIndex = orders.findIndex(o => o.id === orderId);
 
@@ -260,8 +270,9 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`📡 Shawarma Sync Server is running on http://localhost:${PORT}`);
+// Bind to port without forcing single IP interface
+server.listen(PORT, () => {
+  console.log(`📡 Shawarma Sync Server is running on port ${PORT}`);
   console.log(`- SSE Events stream: http://localhost:${PORT}/api/events`);
   console.log(`- Orders REST API:   http://localhost:${PORT}/api/orders`);
 });

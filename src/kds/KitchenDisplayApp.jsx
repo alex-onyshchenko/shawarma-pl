@@ -134,7 +134,20 @@ export default function KitchenDisplayApp() {
     // 2. Subscribe to real-time events via SSE + broadcast
     const unsubscribe = orderSync.subscribe({
       onInit: (data) => {
-        if (data.orders) setOrders(data.orders);
+        if (data.orders) {
+          setOrders(prev => {
+            const incomingNew = data.orders.filter(no => !prev.some(po => po.id === no.id));
+            if (incomingNew.length > 0 && prev.length > 0) {
+              const latest = incomingNew[0];
+              if (isSoundEnabled) {
+                kdsSound.playNewOrder();
+              }
+              setNewOrderAlert(`Нове замовлення #${latest.id}!`);
+              setTimeout(() => setNewOrderAlert(null), 4000);
+            }
+            return data.orders;
+          });
+        }
         if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
       },
       onNewOrder: (newOrder) => {

@@ -1,12 +1,16 @@
 /**
  * Real-time synchronization service
  * Connects Telegram Mini App (:3000) and Kitchen Display System (:3001)
- * via Server-Sent Events (SSE) with BroadcastChannel & localStorage fallbacks.
+ * via direct HTTP/SSE to port 3002 with automatic 1.5s polling fallback.
  */
 
-const SYNC_SERVER_URL = typeof window !== 'undefined' && window.location.port === '3002'
-  ? ''
-  : (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? '' : '');
+function getBaseUrl() {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname || 'localhost';
+    return `http://${host}:3002`;
+  }
+  return 'http://localhost:3002';
+}
 
 let broadcastChannel = null;
 try {
@@ -16,37 +20,54 @@ try {
 } catch (e) {}
 
 export const orderSync = {
-  // Fetch current orders from API
+  // Fetch current orders from API (with primary direct URL + fallback)
   async getOrders() {
-    try {
-      const res = await fetch('/api/orders');
-      if (res.ok) {
-        return await res.json();
+    const base = getBaseUrl();
+    const urls = [`${base}/api/orders`, '/api/orders'];
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (err) {
+        // try next
       }
-    } catch (err) {
-      console.warn('API getOrders failed, fallback to local', err);
     }
     return null;
   },
 
   // Send a new order (from customer or demo button)
   async createOrder(order) {
-    // 1. Send to backend sync server
-    try {
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(order)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.order || order;
+    console.log('[orderSync] 🚀 Sending new order to kitchen:', order);
+    const base = getBaseUrl();
+    const urls = [`${base}/api/orders`, '/api/orders'];
+    let sentSuccess = false;
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(order)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          console.log('[orderSync] ✅ Order accepted by server:', data);
+          sentSuccess = true;
+          return data.order || order;
+        }
+      } catch (e) {
+        // try next
       }
-    } catch (e) {
-      console.warn('Failed to post order to server, using local fallback', e);
     }
 
-    // 2. Broadcast fallback
+    if (!sentSuccess) {
+      console.warn('[orderSync] Server request failed, using local cross-tab fallback');
+    }
+
+    // Local broadcast fallback
     if (broadcastChannel) {
       broadcastChannel.postMessage({ type: 'new_order', order });
     }
@@ -59,22 +80,25 @@ export const orderSync = {
 
   // Update order status (from KDS: new -> cooking -> ready -> archived)
   async updateStatus(orderId, status) {
-    // 1. Send to backend sync server
-    try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.order;
-      }
-    } catch (e) {
-      console.warn('Failed to update status on server, using local fallback', e);
+    console.log(`[orderSync] 🔄 Updating order #${orderId} -> ${status}`);
+    const base = getBaseUrl();
+    const urls = [`${base}/api/orders/${orderId}/status`, `/api/orders/${orderId}/status`];
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          console.log(`[orderSync] ✅ Status #${orderId} updated on server:`, data);
+          return data.order;
+        }
+      } catch (e) {}
     }
 
-    // 2. Broadcast fallback
     if (broadcastChannel) {
       broadcastChannel.postMessage({ type: 'order_status_updated', payload: { id: orderId, status } });
     }
@@ -85,12 +109,18 @@ export const orderSync = {
     return { id: orderId, status };
   },
 
-  // Subscribe to real-time events via SSE + fallbacks
+  // Subscribe to real-time events via SSE + Parallel Polling
   subscribe({ onInit, onNewOrder, onStatusUpdate, onReset }) {
     let eventSource = null;
+    const base = getBaseUrl();
 
+    // 1. Setup SSE stream
     try {
-      eventSource = new EventSource('/api/events');
+      eventSource = new EventSource(`${base}/api/events`);
+
+      eventSource.onopen = () => {
+        console.log('[orderSync] 🟢 SSE stream connected to', `${base}/api/events`);
+      };
 
       eventSource.addEventListener('init', (e) => {
         try {
@@ -102,6 +132,7 @@ export const orderSync = {
       eventSource.addEventListener('new_order', (e) => {
         try {
           const newOrder = JSON.parse(e.data);
+          console.log('[orderSync] 🔔 Received new order via SSE:', newOrder);
           if (onNewOrder) onNewOrder(newOrder);
         } catch (err) {}
       });
@@ -109,6 +140,7 @@ export const orderSync = {
       eventSource.addEventListener('order_status_updated', (e) => {
         try {
           const data = JSON.parse(e.data);
+          console.log('[orderSync] 🔔 Order status updated via SSE:', data);
           if (onStatusUpdate) onStatusUpdate(data);
         } catch (err) {}
       });
@@ -120,14 +152,24 @@ export const orderSync = {
         } catch (err) {}
       });
 
-      eventSource.onerror = (err) => {
-        // EventSource will automatically retry connecting
+      eventSource.onerror = () => {
+        // Handled silently, EventSource auto-reconnects, plus polling ensures zero data loss
       };
     } catch (e) {
-      console.warn('EventSource failed, using BroadcastChannel only', e);
+      console.warn('[orderSync] EventSource init failed', e);
     }
 
-    // Listen to BroadcastChannel for local cross-tab fallback
+    // 2. Continuous 1.5s background polling ensures 100% sync reliability
+    const pollInterval = setInterval(async () => {
+      try {
+        const data = await orderSync.getOrders();
+        if (data && onInit) {
+          onInit(data);
+        }
+      } catch (err) {}
+    }, 1500);
+
+    // 3. Listen to BroadcastChannel for local same-origin tabs
     const handleBroadcast = (e) => {
       const { type, order, payload } = e.data || {};
       if (type === 'new_order' && onNewOrder) onNewOrder(order);
@@ -143,6 +185,7 @@ export const orderSync = {
       if (eventSource) {
         eventSource.close();
       }
+      clearInterval(pollInterval);
       if (broadcastChannel) {
         broadcastChannel.removeEventListener('message', handleBroadcast);
       }

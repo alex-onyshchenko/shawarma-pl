@@ -1,29 +1,20 @@
 {
-  "name": "shawarma-telegram-app",
-  "private": true,
+  "name": "shawarma-services",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:kds": "vite --config vite.kds.config.js --port 3001",
-    "server": "node server.js",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "canvas-confetti": "^1.9.4",
-    "lucide-react": "^0.475.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.5.2",
-    "tailwindcss": "^3.4.17",
-    "tailwindcss-animate": "^1.0.7",
-    "vite": "^6.1.0"
+    "setup": "npm ci --prefix apps/client && npm ci --prefix apps/kitchen && npm ci --prefix apps/analytics && npm ci --prefix services/sync",
+    "dev": "npm run dev --prefix apps/client",
+    "dev:client": "npm run dev --prefix apps/client",
+    "dev:kds": "npm run dev --prefix apps/kitchen",
+    "dev:kitchen": "npm run dev --prefix apps/kitchen",
+    "dev:analytics": "npm run dev --prefix apps/analytics",
+    "server": "npm start --prefix services/sync",
+    "build": "npm run build --prefix apps/client && npm run build --prefix apps/kitchen && npm run build --prefix apps/analytics",
+    "check": "npm run check --prefix services/sync",
+    "test": "npm test --prefix services/sync",
+    "preview": "npm run preview --prefix apps/client",
+    "test:integration": "node scripts/check-integration.mjs"
   }
 }

@@ -1,0 +1,36 @@
+services:
+  sync:
+    build: ./services/sync
+    ports:
+      - "3002:3002"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3002
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  client:
+    build: ./apps/client
+    ports:
+      - "3000:80"
+    depends_on:
+      sync:
+        condition: service_healthy
+  kitchen:
+    build: ./apps/kitchen
+    ports:
+      - "3001:80"
+    depends_on:
+      sync:
+        condition: service_healthy
+  analytics:
+    profiles: ["analytics"]
+    build: ./apps/analytics
+    ports:
+      - "3003:80"
+    depends_on:
+      sync:
+        condition: service_healthy

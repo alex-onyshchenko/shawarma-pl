@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Підключення бота — ШаурМіша</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#09090b;color:#fafafa;font:16px/1.6 system-ui,-apple-system,sans-serif}main{width:100%;max-width:460px}small{color:#fb923c;font-weight:600}h1{font-size:30px;line-height:1.2;letter-spacing:-.7px;margin:10px 0 20px}p{color:#a1a1aa}form{margin-top:28px}label{display:block;font-size:14px;font-weight:600;margin-bottom:8px}input{width:100%;border:1px solid #3f3f46;border-radius:12px;padding:14px;font:inherit;background:#18181b;color:#fafafa}input:focus{outline:2px solid #f97316;outline-offset:2px}button{width:100%;margin-top:16px;padding:14px;border:0;border-radius:12px;background:#f97316;color:#fff;font:600 16px system-ui;cursor:pointer}button:disabled{opacity:.5;cursor:wait}.note{font-size:13px;margin-top:16px}#status{margin-top:20px;color:#fafafa;white-space:pre-line}a{color:#fdba74}form[hidden]{display:none}
+  </style>
+  <script src="/setup.js" defer></script>
+</head>
+<body>
+<main>
+  <small>ШаурМіша · Telegram</small>
+  <h1>Підключити бота</h1>
+  <p>Скопіюй токен свого бота з <a href="https://t.me/BotFather" target="_blank" rel="noreferrer">BotFather</a>, встав його нижче та натисни кнопку.</p>
+  <form id="setup-form" autocomplete="off">
+    <label for="token">Токен від BotFather</label>
+    <input id="token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="220" required placeholder="Встав токен сюди">
+    <button id="submit" type="submit">Підключити Telegram</button>
+  </form>
+  <p class="note">Токен використовується лише для підключення до Telegram. Він не зберігається у файлах, Git чи сховищі браузера.</p>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p id="success" hidden><a href="https://t.me/shaurmisha_pl_bot">Відкрити бота в Telegram →</a></p>
+</main>
+</body>
+</html>

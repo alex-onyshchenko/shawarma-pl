@@ -1,6 +1,6 @@
 # Telegram Bot — ШаурМіша
 
-Самостійний Node.js 24 підпроєкт для @shaurmisha_pl_bot. Не імпортує клієнт чи Sync, не має бази, polling або npm-залежностей. Окремий Vercel-проєкт із двома функціями: `POST /api/webhook` та `GET /api/health`.
+Самостійний Node.js 24 підпроєкт для @shaurmisha_pl_bot. Не імпортує клієнт чи Sync, не має бази, polling або npm-залежностей. Окремий Vercel-проєкт з функціями `POST /api/webhook`, `GET /api/health` та одноразовим підключенням через `POST /api/setup`.
 
 У приватному чаті `/start`, `/start payload`, `/start@shaurmisha_pl_bot` і `/help` повертають привітання та кнопку **«🌯 Відкрити меню»**. Кнопка `web_app` відкриває `MINI_APP_URL` усередині Telegram. Звичайна команда `/start` сама не запускає Mini App; для прямого запуску `https://t.me/shaurmisha_pl_bot?startapp` потрібно окремо увімкнути Main Mini App у BotFather.
 
@@ -37,6 +37,16 @@
 Додайте для Production лише `MINI_APP_URL` і `TELEGRAM_BOT_USERNAME`. `TELEGRAM_BOT_TOKEN` у Vercel не потрібен: Telegram виконує `sendMessage` з JSON-відповіді на webhook. Токен потрібний лише для локальних викликів `getMe`, `setWebhook` та `getWebhookInfo`.
 
 Після деплою перевірте `https://YOUR-BOT-PROJECT.vercel.app/api/health`: має повернути `status: ok`, `service: telegram-bot`. Без потрібних налаштувань повертається 503. Адреса `/api/webhook` має бути доступна Telegram без сторінки входу Vercel. Перевірки джерела повідомлення у webhook немає.
+
+### Підключення через браузер — без локальних файлів
+
+Після успішного деплою відкрийте **`https://YOUR-BOT-PROJECT.vercel.app/setup`** (для поточного проєкту: `https://telegram-bot-tan-ten.vercel.app/setup`). Вставте токен від BotFather у поле і натисніть «Підключити Telegram». Після успіху перевірте `/start` у чаті @shaurmisha_pl_bot.
+
+Токен надсилається по HTTPS на цей бот-сервіс і в офіційний Telegram Bot API для `getMe` / `setWebhook`. Він не зберігається у файлах, env, Git, cookies чи сховищі браузера, не додається до URL і не логується кодом сервісу; поле очищується одразу після надсилання. Вводьте токен лише на своєму бот-домені.
+
+Адреса webhook береться із серверного `BOT_PUBLIC_URL` або системного `VERCEL_PROJECT_PRODUCTION_URL`. Поля запиту та Host не можуть змінити ціль реєстрації. Якщо у Vercel вимкнено автоматичні системні змінні, задайте `BOT_PUBLIC_URL=https://telegram-bot-tan-ten.vercel.app` і зробіть Redeploy. Preview-деплої не можуть запускати реєстрацію. Володіння ботом перевіряється через `getMe`: токен іншого username не змінить webhook цього бота. POST без токена не виконує реєстрацію.
+
+### Альтернатива: команда з приватного env
 
 Заповніть `BOT_PUBLIC_URL` і `TELEGRAM_BOT_TOKEN` у приватному `services/telegram-bot/.env.prod`, потім:
 

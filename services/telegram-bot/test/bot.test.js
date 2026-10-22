@@ -104,6 +104,12 @@ test('standalone HTTP server exposes the same health and public webhook without 
     });
     const base = `http://127.0.0.1:${port}`;
     assert.equal((await fetch(`${base}/api/health`)).status, 200);
+    const setupPage = await fetch(`${base}/setup`);
+    assert.equal(setupPage.status, 200);
+    assert.match(await setupPage.text(), /Підключити бота/);
+    assert.match(setupPage.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+    assert.equal((await fetch(`${base}/setup.js`)).status, 200);
+    assert.equal((await fetch(`${base}/api/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 400);
     const response = await fetch(`${base}/api/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(update()) });
     assert.equal((await response.json()).reply_markup.inline_keyboard[0][0].web_app.url, env.MINI_APP_URL);
     assert.equal((await fetch(`${base}/api/webhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ update_id: 0 }) })).status, 200);

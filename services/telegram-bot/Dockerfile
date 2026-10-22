@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY api ./api
 COPY src ./src
+COPY public ./public
 COPY server.js ./server.js
 USER node
 EXPOSE 3005

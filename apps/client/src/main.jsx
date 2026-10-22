@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import MenuPreviewApp from './MenuPreviewApp';
 import './index.css';
 
 class ErrorBoundary extends React.Component {
@@ -44,7 +45,7 @@ class ErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {import.meta.env.VITE_MENU_PREVIEW === 'true' ? <MenuPreviewApp /> : <App />}
     </ErrorBoundary>
   </React.StrictMode>
 );

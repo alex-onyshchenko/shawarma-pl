@@ -45,10 +45,10 @@ export default function AboutModal({ onClose, point }) {
             <MapPin size={14} className="text-orange-400 shrink-0" />
             <span>{point?.address}</span>
           </div>
-          <div className="flex items-center gap-2 text-zinc-300">
+          {point?.phone && <div className="flex items-center gap-2 text-zinc-300">
             <Phone size={14} className="text-orange-400 shrink-0" />
             <span>{point?.phone}</span>
-          </div>
+          </div>}
         </div>
 
         <div className="pt-2 border-t border-zinc-800 flex justify-between items-center text-[11px] text-zinc-400">

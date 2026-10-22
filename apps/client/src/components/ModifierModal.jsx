@@ -3,7 +3,7 @@ import { X, Plus, Minus, Check, Flame } from 'lucide-react';
 import { tg } from '../utils/telegram';
 import ProductImage from './ProductImage';
 
-export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel }) {
+export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel, previewOnly = false }) {
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || null);
   const [addedMods, setAddedMods] = useState([]);
   const [removedMods, setRemovedMods] = useState([]);
@@ -49,7 +49,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
   };
 
   const handleConfirm = () => {
-    if (orderingDisabled) return;
+    if (orderingDisabled || previewOnly) return;
     tg.haptic.impact('medium');
     onAdd({
       product,
@@ -288,7 +288,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
             </div>
           </div>}
 
-          {product.category === 'Шаурма' && <fieldset>
+          {!previewOnly && product.category === 'Шаурма' && <fieldset>
             <legend className="font-semibold text-sm text-zinc-200 mb-2.5">Підсмажити лаваш</legend>
             <div className="grid grid-cols-3 gap-2">
               {[['light', 'Слабіше'], ['normal', 'Звичайна'], ['strong', 'Сильніше']].map(([value, label]) => <button key={value} type="button" aria-pressed={toastingLevel === value} onClick={() => { tg.haptic.selection(); setToastingLevel(value); }} className={`p-3 rounded-xl border text-sm font-semibold transition-colors ${toastingLevel === value ? 'border-orange-500 bg-orange-500/15 text-white ring-1 ring-orange-500' : 'border-zinc-800 bg-zinc-800/40 text-zinc-300'}`}>{label}</button>)}
@@ -298,7 +298,10 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
         </div>
 
         {/* Sticky Footer */}
-        <div className="safe-bottom p-4 bg-zinc-900/95 backdrop-blur-md border-t border-zinc-800/90 flex flex-col gap-3 shrink-0">
+        {previewOnly ? <div className="safe-bottom p-4 border-t border-zinc-800 space-y-3">
+          <p className="text-sm text-center text-amber-200">Замовлення незабаром</p>
+          <button type="button" onClick={onClose} className="w-full rounded-2xl bg-zinc-800 py-3 text-sm font-semibold hover:bg-zinc-700">Повернутися до меню</button>
+        </div> : <div className="safe-bottom p-4 bg-zinc-900/95 backdrop-blur-md border-t border-zinc-800/90 flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between">
             {/* Quantity Stepper */}
             <div className="flex items-center bg-zinc-800/80 rounded-xl p-1 border border-zinc-700/60">
@@ -346,7 +349,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
               {finalTotal} ₴
             </span>
           </button>
-        </div>
+        </div>}
       </div>
     </>
   );

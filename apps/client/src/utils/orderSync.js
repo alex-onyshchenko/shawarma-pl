@@ -1,6 +1,7 @@
 const baseUrl = () => (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/+$/, '');
 
 async function request(path, { method = 'GET', body, token } = {}) {
+  if (import.meta.env.VITE_MENU_PREVIEW === 'true') throw new Error('Замовлення незабаром. Зараз доступний лише перегляд меню.');
   const response = await fetch(`${baseUrl()}${path}`, {
     method,
     headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -29,6 +30,7 @@ export const orderSync = {
   },
   setAcceptingOrders: (acceptingOrders, token) => request('/api/settings', { method: 'PATCH', body: { acceptingOrders }, token }),
   subscribe({ onInit, onNewOrder, onStatusUpdate, onReset, onAvailability, onMenu }) {
+    if (import.meta.env.VITE_MENU_PREVIEW === 'true') return () => {};
     let stopped = false;
     let polling = false;
     const source = new EventSource(`${baseUrl()}/api/events`);

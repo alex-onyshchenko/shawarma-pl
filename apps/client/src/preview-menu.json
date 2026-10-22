@@ -1,0 +1,316 @@
+{
+  "point": {
+    "id": "demo",
+    "name": "ШаурМіша",
+    "address": "м. Полтава, вул. Соборності, 46",
+    "description": "М’ясо на живому вугіллі, свіжі овочі та авторські соуси.",
+    "timeZone": "Europe/Kyiv",
+    "weeklyHours": [
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      },
+      {
+        "closed": false,
+        "open": "10:00",
+        "close": "22:00"
+      }
+    ]
+  },
+  "products": [
+    {
+      "id": "shawarma-signature",
+      "name": "Фірмова шаурма",
+      "category": "Шаурма",
+      "description": "Томати свіжі, перець солодкий, квашені огірки, пекінська капуста з зеленню, часниковий соус карі, моцарелла, курка, хмелі.",
+      "price": 200,
+      "weight": "350–550 г",
+      "emoji": "🌯",
+      "hasModifiers": false,
+      "availableSpiciness": false,
+      "sizes": [
+        {
+          "id": "small",
+          "name": "Маленька",
+          "price": 200,
+          "weight": "350 г"
+        },
+        {
+          "id": "medium",
+          "name": "Середня",
+          "price": 230,
+          "weight": "450 г"
+        },
+        {
+          "id": "large",
+          "name": "Велика",
+          "price": 260,
+          "weight": "550 г"
+        }
+      ],
+      "imageUrl": "/menu/signature.jpg",
+      "tag": "🔥 Найпопулярніша",
+      "visible": true,
+      "available": true,
+      "sortOrder": 0
+    },
+    {
+      "id": "shawarma-classic",
+      "name": "Класична шаурма",
+      "category": "Шаурма",
+      "description": "Томати свіжі, картопля фрі, мариновані огірки, пекінська капуста з зеленню, часниковий соус тартар, моцарелла, курка су-від.",
+      "price": 190,
+      "weight": "350–550 г",
+      "emoji": "🌯",
+      "hasModifiers": false,
+      "availableSpiciness": false,
+      "sizes": [
+        {
+          "id": "small",
+          "name": "Маленька",
+          "price": 190,
+          "weight": "350 г"
+        },
+        {
+          "id": "medium",
+          "name": "Середня",
+          "price": 220,
+          "weight": "450 г"
+        },
+        {
+          "id": "large",
+          "name": "Велика",
+          "price": 250,
+          "weight": "550 г"
+        }
+      ],
+      "imageUrl": "/menu/classic.jpg",
+      "visible": true,
+      "available": true,
+      "sortOrder": 1
+    },
+    {
+      "id": "shawarma-beef",
+      "name": "Яловича шаурма",
+      "category": "Шаурма",
+      "description": "Томати свіжі, картопля фрі, мариновані огірки, пекінська капуста, зелень, соус білий барбекю, сир чеддер, яловича котлета.",
+      "price": 230,
+      "weight": "450 г",
+      "emoji": "🌯",
+      "hasModifiers": false,
+      "availableSpiciness": false,
+      "sizes": [
+        {
+          "id": "medium",
+          "name": "Середня",
+          "price": 230,
+          "weight": "450 г"
+        }
+      ],
+      "imageUrl": "/menu/beef.jpg",
+      "visible": true,
+      "available": true,
+      "sortOrder": 2
+    },
+    {
+      "id": "12",
+      "name": "Кола 0.5л",
+      "category": "Напої",
+      "description": "Охолоджений класичний газований напій Coca-Cola у пляшці",
+      "price": 40,
+      "weight": "500 мл",
+      "emoji": "🥤",
+      "hasModifiers": false,
+      "imageUrl": "",
+      "sizes": [],
+      "visible": true,
+      "available": true,
+      "sortOrder": 11
+    },
+    {
+      "id": "13",
+      "name": "Фанта 0.5л",
+      "category": "Напої",
+      "description": "Освіжаючий апельсиновий газований напій Fanta у пляшці",
+      "price": 40,
+      "weight": "500 мл",
+      "emoji": "🍊",
+      "hasModifiers": false,
+      "imageUrl": "",
+      "sizes": [],
+      "visible": true,
+      "available": true,
+      "sortOrder": 12
+    },
+    {
+      "id": "14",
+      "name": "Айран з зеленню 0.33л",
+      "category": "Напої",
+      "description": "Традиційний освіжаючий айран з подрібненим кропом, м'ятою та дрібкою солі",
+      "price": 35,
+      "weight": "330 мл",
+      "emoji": "🥛",
+      "tag": "Традиція 🌿",
+      "hasModifiers": false,
+      "imageUrl": "",
+      "sizes": [],
+      "visible": true,
+      "available": true,
+      "sortOrder": 13
+    },
+    {
+      "id": "15",
+      "name": "Крафтовий Лимонад 0.4л",
+      "category": "Напої",
+      "description": "Домашній свіжовичавлений лимонад з лимоном, лаймом та листочками м'яти",
+      "price": 65,
+      "weight": "400 мл",
+      "emoji": "🍋",
+      "hasModifiers": false,
+      "imageUrl": "",
+      "sizes": [],
+      "visible": true,
+      "available": true,
+      "sortOrder": 14
+    }
+  ],
+  "categories": [
+    {
+      "id": "shawarma",
+      "name": "Шаурма",
+      "icon": "🌯"
+    },
+    {
+      "id": "drinks",
+      "name": "Напої",
+      "icon": "🥤"
+    }
+  ],
+  "modifiers": {
+    "add": [
+      {
+        "id": "a1",
+        "name": "Сир Чеддер",
+        "price": 30,
+        "icon": "🧀"
+      },
+      {
+        "id": "a2",
+        "name": "Халапеньйо",
+        "price": 20,
+        "icon": "🌶️"
+      },
+      {
+        "id": "a3",
+        "name": "Подвійне м'ясо на вугіллі",
+        "price": 60,
+        "icon": "🥩"
+      },
+      {
+        "id": "a4",
+        "name": "Хрусткий бекон гриль",
+        "price": 35,
+        "icon": "🥓"
+      },
+      {
+        "id": "a5",
+        "name": "Солодка кукурудза",
+        "price": 15,
+        "icon": "🌽"
+      },
+      {
+        "id": "a6",
+        "name": "Хрустка смажена цибулька",
+        "price": 15,
+        "icon": "🧅"
+      }
+    ],
+    "remove": [
+      {
+        "id": "r1",
+        "name": "Без цибулі"
+      },
+      {
+        "id": "r2",
+        "name": "Без часникового соусу"
+      },
+      {
+        "id": "r3",
+        "name": "Без капусти"
+      },
+      {
+        "id": "r4",
+        "name": "Без помідорів"
+      },
+      {
+        "id": "r5",
+        "name": "Без огірків"
+      }
+    ],
+    "lavash": [
+      {
+        "id": "l1",
+        "name": "Звичайний лаваш",
+        "price": 0
+      },
+      {
+        "id": "l2",
+        "name": "Сирний лаваш",
+        "price": 10
+      },
+      {
+        "id": "l3",
+        "name": "Шпинатний лаваш",
+        "price": 10
+      }
+    ],
+    "spiciness": [
+      {
+        "level": 0,
+        "label": "Не гостра",
+        "icon": "🥬"
+      },
+      {
+        "level": 1,
+        "label": "Пікантна",
+        "icon": "🌶️"
+      },
+      {
+        "level": 2,
+        "label": "Гостра",
+        "icon": "🌶️🌶️"
+      },
+      {
+        "level": 3,
+        "label": "Вогонь!",
+        "icon": "🔥🌶️"
+      }
+    ]
+  }
+}

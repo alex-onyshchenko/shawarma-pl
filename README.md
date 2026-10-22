@@ -194,7 +194,7 @@ npm run test:integration
 
 ### Деплой клієнта на Vercel і запуск у Telegram
 
-Клієнт має мобільний інтерфейс без симулятора. Root Directory у Vercel — `apps/client`; потрібна публічна HTTPS-адреса Sync у `VITE_SYNC_API_URL`. Sync із SQLite розгортається окремо. Покрокова підготовка, налаштування BotFather та межі поточного MVP: [apps/client/DEPLOYMENT.md](apps/client/DEPLOYMENT.md).
+Клієнт має мобільний інтерфейс без симулятора. Root Directory у Vercel — `apps/client`. Поточний Vercel build `npm run build:menu` показує автономний перегляд меню без API та без замовлень. Для майбутнього режиму замовлень потрібна публічна HTTPS-адреса Sync у `VITE_SYNC_API_URL`; Sync із SQLite розгортається окремо. Покрокова підготовка, налаштування BotFather та межі поточного MVP: [apps/client/DEPLOYMENT.md](apps/client/DEPLOYMENT.md).
 
 ### Окружения dev / prod
 
@@ -203,7 +203,8 @@ npm run test:integration
 | Действие | Команда | Настройки |
 | --- | --- | --- |
 | Frontend: разработка | `npm run dev` | `.env.dev` |
-| Frontend: обычная сборка / Vercel | `npm run build` | `.env.prod` |
+| Frontend: обычная сборка | `npm run build` | `.env.prod` |
+| Client: Vercel menu preview | `npm run build:menu` | dev, без API и заказов |
 | Frontend: явный выбор сборки | `npm run build:dev` / `npm run build:prod` | выбранное окружение |
 | Frontend: preview | `npm run preview` / `npm run preview:dev` | prod / dev; сначала собрать тем же mode |
 | Sync: разработка | `npm run dev` / `npm run start:dev` | `.env.dev` |

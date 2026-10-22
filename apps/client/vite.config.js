@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), '');
-  if (process.env.VERCEL) {
+  if (process.env.VERCEL && env.VITE_MENU_PREVIEW !== 'true') {
     let api;
     try { api = new URL(env.VITE_SYNC_API_URL); } catch { /* Report configuration below. */ }
     if (!api || api.protocol !== 'https:' || /^(localhost|127\.|\[::1\])/.test(api.hostname) || api.username || api.password || api.search || api.hash || api.pathname !== '/') {

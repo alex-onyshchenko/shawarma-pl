@@ -2,6 +2,16 @@
 
 Клієнт — статичний Vite-сайт. Sync — окремий Node.js 24 процес із SSE та SQLite на постійному диску. Поточний Sync не переноситься у Vercel Functions: він потребує довготривалого процесу та постійного сховища. Наразі публічного Sync URL ще немає, сайт не опублікований.
 
+## Поточний деплой: лише перегляд меню
+
+Зараз Vercel виконує `npm run build:menu`: Vite mode `dev`, `VITE_MENU_PREVIEW=true`. API URL не потрібний; видаліть фальшиве `VITE_SYNC_API_URL` з налаштувань Vercel. Якщо Build Command перевизначено в dashboard, встановіть `npm run build:menu` або вимкніть override, щоб застосувати `vercel.json`.
+
+Клієнт показує локальний публічний знімок `src/preview-menu.json`, фото, склад, розміри й ціни. Немає кошика, оформлення, запитів до Sync, SSE або polling. Статус кафе не імітується: показується «Замовлення незабаром». Знімок меню оновлюється лише зміною файлу та новим деплоєм, не через Admin. У знімку немає замовлень, бази даних чи секретів.
+
+Локально: `npm run dev:menu`; перевірка: `npm run test:menu`. Звичайні `npm run dev`, `npm run build`, Docker і production-режим замовлень зберігають підключення до Sync.
+
+Нижче описане **майбутнє підключення замовлень**. Коли Sync буде готовий, змініть Vercel Build Command на `npm run build`, задайте справжній `VITE_SYNC_API_URL` і приберіть `VITE_MENU_PREVIEW`, якщо додавали його в dashboard.
+
 ## 1. Підготувати Sync
 
 Розмістіть `services/sync` на сервері з Node.js 24 або через наявний Docker Compose. Налаштуйте HTTPS, постійний диск для SQLite та приватний `ADMIN_TOKEN`. Збережіть поточну базу, якщо потрібні налаштовані меню й точка. HTTPS-проксі має пропускати SSE `/api/events` без буферизації. Перевірте `https://SYNC_HOST/api/health`.
@@ -23,7 +33,7 @@
 | Output Directory | `dist` |
 | Environment Variable | `VITE_SYNC_API_URL=https://SYNC_HOST` |
 
-Додайте змінну для Production та Preview. Вона публічна й вбудовується у JavaScript під час збірки: жодних токенів або паролів сюди не додавати. Після зміни адреси виконайте Redeploy. Збірка на Vercel навмисно завершується помилкою без коректного HTTPS origin Sync, щоб не опублікувати клієнт із неробочим `/api`.
+Додайте змінну для Production та Preview. Вона публічна й вбудовується у JavaScript під час збірки: жодних токенів або паролів сюди не додавати. Після зміни адреси виконайте Redeploy. Збірка режиму замовлень на Vercel навмисно завершується помилкою без коректного HTTPS origin Sync, щоб не опублікувати клієнт із неробочим `/api`.
 
 `npm run dev` завантажує `.env.dev`, `npm run build` — `.env.prod` (Vite mode `prod`). Шаблони — `.env.dev.example` і `.env.prod.example`; приватні локальні файли не комітяться. На Vercel значення задаються в Environment Variables та мають пріоритет над файлом.
 

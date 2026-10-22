@@ -9,7 +9,10 @@
     "preview": "vite preview --mode prod",
     "build:dev": "vite build --mode dev",
     "build:prod": "vite build --mode prod",
-    "preview:dev": "vite preview --mode dev"
+    "preview:dev": "vite preview --mode dev",
+    "build:menu": "VITE_MENU_PREVIEW=true vite build --mode dev",
+    "dev:menu": "VITE_MENU_PREVIEW=true vite --mode dev",
+    "test:menu": "VITE_MENU_PREVIEW=true node --test test/menu-preview.test.mjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",

@@ -1,13 +1,13 @@
 import React from 'react';
-import { Plus, SlidersHorizontal, Check } from 'lucide-react';
+import { Plus, SlidersHorizontal, Check, Eye } from 'lucide-react';
 import { tg } from '../utils/telegram';
 import ProductImage from './ProductImage';
 
-export default function ProductCard({ product, onSelect, onQuickAdd, inCartCount, orderingDisabled, orderingUnavailableLabel }) {
+export default function ProductCard({ product, onSelect, onQuickAdd, inCartCount, orderingDisabled, orderingUnavailableLabel, previewOnly = false }) {
   const customizable = product.hasModifiers || !!product.sizes?.length;
   const handleClick = () => {
     if (!product.available || orderingDisabled) return;
-    if (customizable) {
+    if (customizable || previewOnly) {
       tg.haptic.impact('light');
       onSelect(product);
     } else {
@@ -65,7 +65,7 @@ export default function ProductCard({ product, onSelect, onQuickAdd, inCartCount
                 : 'bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20'
             }`}
           >
-            {!product.available ? <span>Немає в наявності</span> : orderingDisabled ? <span>{orderingUnavailableLabel}</span> : customizable ? (
+            {!product.available ? <span>Немає в наявності</span> : previewOnly ? <><Eye size={15}/><span>Переглянути</span></> : orderingDisabled ? <span>{orderingUnavailableLabel}</span> : customizable ? (
               <>
                 <SlidersHorizontal size={13} />
                 <span>{product.sizes?.length ? 'Обрати' : 'Скласти'}</span>

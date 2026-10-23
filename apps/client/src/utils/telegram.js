@@ -29,6 +29,22 @@ export const tg = {
     return this.isAvailable ? this.webApp.initDataUnsafe?.user || null : null;
   },
 
+  requestNotifications() {
+    if (!this.isAvailable) return Promise.resolve(false);
+    if (this.webApp.initDataUnsafe?.user?.allows_write_to_pm) return Promise.resolve(true);
+    if (!this.webApp.requestWriteAccess || (this.webApp.isVersionAtLeast && !this.webApp.isVersionAtLeast('6.9'))) return Promise.resolve(false);
+    return new Promise(resolve => {
+      try { this.webApp.requestWriteAccess(allowed => resolve(Boolean(allowed))); }
+      catch { resolve(false); }
+    });
+  },
+
+  trackInBot() {
+    if (!this.isAvailable) return;
+    this.webApp.openTelegramLink('https://t.me/shaurmisha_pl_bot');
+    this.webApp.close();
+  },
+
   // Haptic feedback with web fallback
   haptic: {
     impact(style = 'light') {

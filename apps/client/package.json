@@ -12,7 +12,8 @@
     "preview:dev": "vite preview --mode dev",
     "build:menu": "VITE_MENU_PREVIEW=true vite build --mode dev",
     "dev:menu": "VITE_MENU_PREVIEW=true vite --mode dev",
-    "test:menu": "VITE_MENU_PREVIEW=true node --test test/menu-preview.test.mjs"
+    "test:menu": "VITE_MENU_PREVIEW=true node --test test/menu-preview.test.mjs",
+    "test:notifications": "node --test test/order-notifications.test.mjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.4",

@@ -18,37 +18,31 @@ async function request(path, { method = 'GET', body, token } = {}) {
 }
 
 export const orderSync = {
-  getOrders: () => request('/api/orders'),
   getMenu: () => request('/api/menu'),
   getAvailability: () => request('/api/availability'),
-  async createOrder(order) { return (await request('/api/orders', { method: 'POST', body: order })).order; },
-  async acceptOrder(id, delayMinutes) {
-    return (await request(`/api/orders/${encodeURIComponent(id)}/accept`, { method: 'POST', body: { delayMinutes } })).order;
-  },
-  async updateStatus(id, status, options = {}) {
-    return (await request(`/api/orders/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: { status, ...options } })).order;
-  },
-  setAcceptingOrders: (acceptingOrders, token) => request('/api/settings', { method: 'PATCH', body: { acceptingOrders }, token }),
-  subscribe({ onInit, onNewOrder, onStatusUpdate, onReset, onAvailability, onMenu }) {
+  async createOrder(order) { return { ...(await request('/api/orders', { method: 'POST', body: order })).order, trackingToken: order.trackingToken }; },
+  enableNotifications: order => request('/api/client/notifications', { method: 'POST', body: {
+    id: order.id, telegramInitData: window.Telegram?.WebApp?.initData || '',
+  } }),
+  subscribe({ onInit, onAvailability, onMenu }) {
     if (import.meta.env.VITE_MENU_PREVIEW === 'true') return () => {};
     let stopped = false;
-    let polling = false;
-    const source = new EventSource(`${baseUrl()}/api/events`);
-    const callbacks = { init: onInit, new_order: onNewOrder, order_status_updated: onStatusUpdate, reset: onReset, availability_updated: onAvailability, menu_updated: onMenu };
-    for (const [event, callback] of Object.entries(callbacks)) {
-      source.addEventListener(event, message => {
-        if (!stopped && callback) callback(JSON.parse(message.data));
-      });
-    }
+    let busy = false;
+    let revision;
     async function refresh() {
-      if (polling || stopped) return;
-      polling = true;
-      try { const data = await orderSync.getOrders(); if (!stopped) onInit?.(data); }
-      catch { /* Keep the last known state until the server is reachable again. */ }
-      finally { polling = false; }
+      if (stopped || busy) return;
+      busy = true;
+      try {
+        const [menu, availability] = await Promise.all([orderSync.getMenu(), orderSync.getAvailability()]);
+        if (stopped) return;
+        onAvailability?.(availability);
+        if (revision !== menu.revision) { revision = menu.revision; onMenu?.(menu); }
+        onInit?.({ menu, availability });
+      } catch { /* Preserve the last known menu until connectivity recovers. */ }
+      finally { busy = false; }
     }
-    const interval = setInterval(refresh, 3000);
+    const interval = setInterval(refresh, 5000);
     refresh();
-    return () => { stopped = true; clearInterval(interval); source.close(); };
+    return () => { stopped = true; clearInterval(interval); };
   },
 };

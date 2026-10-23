@@ -1,70 +1,60 @@
-import React, { useEffect, useState } from 'react';
-import confetti from 'canvas-confetti';
-import { Clock, ChefHat, CheckCircle2, Send, RotateCcw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Clock, CheckCircle2, Send } from 'lucide-react';
 import { tg } from '../utils/telegram';
 import { orderSync } from '../utils/orderSync';
 import { formatTime } from '../utils/timing';
 
-export default function OrderSuccessModal({ order, onReset }) {
-  const [liveOrder, setLiveOrder] = useState(order);
-  const [missing, setMissing] = useState(false);
-  useEffect(() => {
-    let lastStatus = order.status;
-    const update = updated => {
-      if (!updated || updated.id !== order.id || (order.clientRequestId ? updated.clientRequestId !== order.clientRequestId : updated.createdAt !== order.createdAt)) return;
-      setMissing(false);
-      setLiveOrder(updated);
-      try { localStorage.setItem('shawarma_active_order', JSON.stringify(updated)); } catch {}
-      if (updated.status === 'ready' && lastStatus !== 'ready') {
-        confetti({ particleCount: 40, spread: 50 });
-        tg.haptic.success();
+export default function OrderSuccessModal({ order, onReset, telegramNotifications }) {
+  const [enabled, setEnabled] = useState(Boolean(order?.notificationsEnabled));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!order) return <div className="p-6"><button onClick={onReset}>До меню</button></div>;
+  const track = async () => {
+    if (busy) return;
+    setError('');
+    setBusy(true);
+    try {
+      if (!tg.isAvailable) { setError('Для сповіщень відкрийте меню в Telegram: @shaurmisha_pl_bot.'); return; }
+      if (!telegramNotifications) { setError('Сповіщення тимчасово недоступні. Зверніться до закладу, щоб уточнити готовність.'); return; }
+      if (!enabled) {
+        const allowed = await tg.requestNotifications();
+        if (!allowed) { setError('Дозвольте боту надсилати повідомлення, щоб отримувати статус замовлення.'); return; }
+        await orderSync.enableNotifications(order);
+        setEnabled(true);
       }
-      lastStatus = updated.status;
-    };
-    return orderSync.subscribe({
-      onInit: data => {
-        const current = [...data.orders, ...data.archivedOrders].find(item => item.id === order.id && (order.clientRequestId ? item.clientRequestId === order.clientRequestId : item.createdAt === order.createdAt));
-        setMissing(!current); update(current);
-      },
-      onStatusUpdate: data => update(data.order),
-    });
-  }, [order.id]);
-
-  const readyAt = liveOrder.confirmedReadyAt || liveOrder.baselineReadyAt;
-  const labels = { new: liveOrder.acceptedAt ? 'Час підтверджено · у черзі' : 'Очікуємо підтвердження часу кухнею', cooking: '🔥 Готується на вугіллі', ready: '🎉 Готово до видачі!', archived: '✅ Замовлення завершено' };
+      tg.trackInBot();
+    } catch (error) { setError(error.message || 'Не вдалося підключити сповіщення. Спробуйте ще раз.'); }
+    finally { setBusy(false); }
+  };
+  const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   return (
-    <div className="p-4 pb-24 space-y-4 max-w-2xl mx-auto animate-fade-in">
-      {missing && <p role="alert" className="rounded-xl bg-amber-950 border border-amber-700 p-3 text-xs text-amber-200">Це демозамовлення недоступне після оновлення сховища. Можна створити нове замовлення.</p>}
-      <div role="status" aria-live="polite" className="rounded-2xl border border-sky-500/30 bg-sky-950/50 p-4">
-        <div className="flex items-center gap-2 text-sky-400 text-xs font-bold mb-2"><Send size={16} /> ШаурМіша · Telegram · імітація</div>
-        <p className="text-sm text-zinc-200 leading-relaxed">{liveOrder.notification || 'Замовлення оформлено. Очікуємо підтвердження часу кухнею.'}</p>
-      </div>
+    <div className="p-4 pb-12 max-w-2xl mx-auto animate-fade-in">
       <div className="bg-zinc-900 rounded-3xl p-5 border border-zinc-800 space-y-5 text-center">
-        <div className="text-emerald-400 flex justify-center">{liveOrder.status === 'cooking' ? <ChefHat size={44} /> : <CheckCircle2 size={44} />}</div>
-        <h2 className="text-2xl font-black">Замовлення #{liveOrder.id}</h2>
-        <p className="text-sm text-orange-400 font-bold">{labels[liveOrder.status]}</p>
+        <CheckCircle2 size={44} className="mx-auto text-emerald-400" />
+        <h2 className="text-2xl font-bold tracking-tight">Замовлення #{order.id} оформлено</h2>
+        <p className="text-sm text-zinc-400">Кухня підтвердить час видачі. Оплата при отриманні.</p>
         <div className="bg-zinc-950 rounded-2xl p-4 border border-zinc-800">
-          <p className="text-xs text-zinc-400 flex justify-center gap-2 items-center"><Clock size={14} /> {liveOrder.acceptedAt ? 'Підтверджений час готовності' : 'Попередній час готовності'}</p>
-          <p className="text-4xl font-black text-orange-400 my-2">{readyAt ? formatTime(readyAt, liveOrder.timeZone) : 'Уточнюємо'}</p>
-          <p className="text-xs text-zinc-400">Сьогодні · місцевий час</p>
-          {liveOrder.timingAdjusted && <p className="text-xs text-amber-300 mt-3">Обраний слот став неактуальним. Автоматично перенесли час на {formatTime(liveOrder.baselineReadyAt, liveOrder.timeZone)}.</p>}
-          {!!liveOrder.kitchenDelayMinutes && <p className="text-xs text-amber-300 mt-2">Кухня додала {liveOrder.kitchenDelayMinutes} хвилин до базового часу.</p>}
+          <p className="text-xs text-zinc-400 flex justify-center gap-2 items-center"><Clock size={14} /> Попередній час готовності</p>
+          <p className="text-4xl font-semibold tracking-tight text-orange-400 my-2">{readyAt ? formatTime(readyAt, order.timeZone) : 'Уточнюємо'}</p>
+          {order.timingAdjusted && <p className="text-xs text-amber-300">Обраний слот став неактуальним. Час автоматично оновлено.</p>}
         </div>
         <ul aria-label="Склад замовлення" className="space-y-3 text-left">
-          {liveOrder.items?.map((item, index) => <li key={index} className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
-            <span className="shrink-0 rounded-lg bg-zinc-800 px-2 py-1 text-sm font-bold text-white">{item.qty} ×</span>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-zinc-100 leading-relaxed">{item.name}</p>
-              {item.toasting && <p className="mt-1 text-xs text-orange-300">Підсмажити лаваш: {item.toasting.toLowerCase()}</p>}
+          {order.items?.map((item, index) => <li key={index} className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+            <span className="shrink-0 rounded-lg bg-zinc-800 px-2 py-1 text-sm font-bold">{item.qty} ×</span>
+            <div><p className="text-sm font-semibold leading-relaxed">{item.name}</p>
+              {item.toasting && <p className="mt-1 text-xs text-orange-300">Лаваш: {item.toasting.toLowerCase()}</p>}
             </div>
           </li>)}
         </ul>
         <div className="text-sm text-left border-t border-zinc-800 pt-4 space-y-2">
-          <p>Сума: <strong>{liveOrder.totalPrice} ₴</strong></p>
-          <p className="text-xs text-zinc-400">{liveOrder.paymentStatus === 'cash_due' ? 'Оплата готівкою при отриманні' : 'Оплату успішно імітовано. Кошти не списувалися.'}</p>
-          <p className="text-xs text-zinc-300">{liveOrder.orderType === 'delivery' ? `Доставка: ${liveOrder.deliveryAddress || ''}. Зазначено час готовності до передачі кур’єру.` : `Самовивіз: ${liveOrder.selectedLocation?.name || 'Заклад'}`}</p>
+          <p>Сума: <strong>{order.totalPrice} ₴</strong></p>
+          <p className="text-zinc-400">📍 {order.selectedLocation?.name || order.pointName}</p>
         </div>
-        <button onClick={onReset} className="w-full bg-orange-500 rounded-xl p-3 font-bold flex items-center justify-center gap-2"><RotateCcw size={16} /> Нове замовлення</button>
+        {!enabled && <p className="text-xs text-amber-300">Сповіщення ще не підключені. Натисніть кнопку нижче та дозвольте повідомлення від бота.</p>}
+        {error && <p role="alert" className="rounded-xl border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">{error}</p>}
+        <button disabled={busy} onClick={track} className="w-full bg-orange-500 rounded-xl p-3.5 font-semibold flex items-center justify-center gap-2 disabled:opacity-50"><Send size={17} />{busy ? 'Підключаємо…' : 'Відстежувати статус'}</button>
+        <p className="text-xs text-zinc-400">{enabled ? 'Статус замовлення надходитиме в чат бота.' : 'Для відстеження потрібен дозвіл на повідомлення в Telegram.'}</p>
+        <button onClick={onReset} className="text-sm text-zinc-400 underline underline-offset-4">Повернутися до меню</button>
       </div>
     </div>
   );

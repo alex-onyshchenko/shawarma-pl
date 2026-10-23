@@ -28,6 +28,7 @@ export default function CheckoutView({
   const selectedLocation = point ? { id: point.id, name: point.address, metro: point.metro } : null;
   const [phoneNumber, setPhoneNumber] = useState('');
   const [napkins, setNapkins] = useState(true);
+  const [wantNotifications, setWantNotifications] = useState(true);
   const paymentMethod = 'cash';
 
   const [timingMode, setTimingMode] = useState('asap');
@@ -69,6 +70,7 @@ export default function CheckoutView({
     submitting.current = true;
     setIsSubmitting(true);
     try {
+      const notificationsEnabled = wantNotifications && availability?.telegramNotifications && tg.isAvailable ? await tg.requestNotifications() : false;
       const current = await orderSync.getAvailability();
       setAvailability(current);
       if (!current.acceptingOrders) throw new Error(current.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено');
@@ -76,7 +78,7 @@ export default function CheckoutView({
       if (timingMode === 'scheduled') setRequestedReadyAt(String(timing.baselineReadyAt));
       await onPlaceOrder({
         cart, subtotal, discount, deliveryFee, finalTotal, deliveryType,
-        selectedLocation, phoneNumber: phoneNumber.trim(), napkins, paymentMethod,
+        selectedLocation, phoneNumber: phoneNumber.trim(), napkins, paymentMethod, notificationsEnabled,
         timingMode, requestedReadyAt: timing.requestedReadyAt,
       });
     } catch (error) {
@@ -342,7 +344,11 @@ export default function CheckoutView({
         </div>
       </div>
 
-      <p className="text-xs text-zinc-400">Оплата при отриманні замовлення. Telegram-повідомлення поки імітуємо.</p>
+      <p className="text-xs text-zinc-400">Оплата при отриманні замовлення.</p>
+      {tg.isAvailable && availability?.telegramNotifications && <label className="flex gap-3 rounded-xl border border-zinc-800 p-4 text-sm">
+        <input type="checkbox" checked={wantNotifications} onChange={event => setWantNotifications(event.target.checked)} className="accent-orange-500" />
+        <span>Повідомляти про готовність у Telegram<span className="mt-1 block text-xs text-zinc-400">Telegram запитає дозвіл, якщо його ще немає. Без дозволу бот не зможе надсилати сповіщення.</span></span>
+      </label>}
       {hasUnavailableItems && <p role="alert" className="text-sm text-red-300">Деякі позиції недоступні. Видаліть їх або оберіть склад заново.</p>}
       {submitError && <p role="alert" className="rounded-xl border border-red-700 bg-red-950 p-3 text-sm text-red-200">{submitError}</p>}
       {/* Sticky Native-like Telegram MainButton */}

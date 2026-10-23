@@ -1,4 +1,6 @@
 import http from 'node:http';
+import { telegramUser, trackingHash, ownsOrder, publicJson } from './telegram.js';
+import { createNotifications } from './notifications.js';
 import { fileURLToPath } from 'node:url';
 import { createStore, hoursForPoint, quoteOrder, DEMO_POINT_ID } from './store.js';
 import { createAdminHandler } from './admin.js';
@@ -8,17 +10,21 @@ const PORT = Number(process.env.PORT || 3002);
 const HOST = process.env.HOST || '0.0.0.0';
 const adminToken = process.env.ADMIN_TOKEN || '';
 const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url)));
+const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+const notifications = createNotifications(store.db, { token: botToken });
+const notificationTimer = setInterval(() => notifications.tick().catch(() => console.error('Notification queue unavailable')), 1000);
+notificationTimer.unref();
 function availability() {
   const serverNow = Date.now();
   const point = store.activePoint();
   const hours = hoursForPoint(point, serverNow);
   const slots = getSlots(serverNow, hours);
   const acceptingOrders = point.acceptingOrders && !point.onBreak;
-  return { ...hours, point, serverNow, slots, manualSlots: getManualSlots(serverNow), cafeOpen: point.acceptingOrders, onBreak: point.onBreak, acceptingOrders, asapAvailable: acceptingOrders && asapAvailable(serverNow, hours) };
+  return { ...hours, point, serverNow, telegramNotifications: notifications.configured, slots, manualSlots: getManualSlots(serverNow), cafeOpen: point.acceptingOrders, onBreak: point.onBreak, acceptingOrders, asapAvailable: acceptingOrders && asapAvailable(serverNow, hours) };
 }
 function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(body));
+  res.end(publicJson(body));
 }
 function announce(order) {
   broadcast('order_status_updated', { id: order.id, status: order.status, order });
@@ -43,8 +49,21 @@ if (!savedOrders) store.set('orders', { orders, archivedOrders, nextOrderId });
 const sseClients = new Set();
 
 function broadcast(eventType, payload) {
-  if (['new_order', 'order_status_updated', 'reset'].includes(eventType)) store.set('orders', { orders, archivedOrders, nextOrderId });
-  const message = `event: ${eventType}\ndata: ${JSON.stringify(payload)}\n\n`;
+  if (['new_order', 'order_status_updated', 'reset'].includes(eventType)) {
+    store.db.exec('BEGIN IMMEDIATE');
+    try {
+      store.set('orders', { orders, archivedOrders, nextOrderId });
+      if (eventType === 'reset') store.db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE state='pending'").run();
+      const order = eventType === 'new_order' ? payload : payload.order;
+      if (order) {
+        if (eventType === 'new_order') notifications.enqueue(order, 'placed');
+        else if (order.status === 'new' && order.acceptedAt) notifications.enqueue(order, 'confirmed');
+        else if (['cooking', 'ready'].includes(order.status)) notifications.enqueue(order, order.status);
+      }
+      store.db.exec('COMMIT');
+    } catch (error) { store.db.exec('ROLLBACK'); throw error; }
+  }
+  const message = `event: ${eventType}\ndata: ${publicJson(payload)}\n\n`;
   console.log(`[BROADCAST] ${eventType} to ${sseClients.size} client(s)`);
   for (const res of sseClients) {
     try {
@@ -114,6 +133,25 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, availability());
     return;
   }
+  if (pathname === '/api/client/notifications' && req.method === 'POST') {
+    try {
+      const data = await readJsonBody(req);
+      const user = telegramUser(data.telegramInitData, botToken);
+      const order = [...orders, ...archivedOrders].find(item => item.id === String(data.id));
+      if (!user || !order || order.telegramUserId !== user.id) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      order.notificationsEnabled = true;
+      // Queue only the current progress, and preserve event deduplication.
+      store.db.exec('BEGIN IMMEDIATE');
+      try {
+        store.set('orders', { orders, archivedOrders, nextOrderId });
+        if (['cooking', 'ready'].includes(order.status)) notifications.enqueue(order, order.status);
+        else if (order.status === 'new') notifications.enqueue(order, order.acceptedAt ? 'confirmed' : 'placed');
+        store.db.exec('COMMIT');
+      } catch (error) { store.db.exec('ROLLBACK'); throw error; }
+      json(res, 200, { enabled: true });
+    } catch (error) { json(res, error.status || 400, { error: error.message }); }
+    return;
+  }
   if (pathname === '/api/settings' && req.method === 'PATCH') {
     try {
       const data = await readJsonBody(req);
@@ -147,7 +185,7 @@ const server = http.createServer(async (req, res) => {
       'Access-Control-Allow-Origin': '*'
     });
 
-    res.write(`event: init\ndata: ${JSON.stringify({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() })}\n\n`);
+    res.write(`event: init\ndata: ${publicJson({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() })}\n\n`);
     sseClients.add(res);
     console.log(`[SSE CONNECTED] Active clients: ${sseClients.size}`);
 
@@ -161,7 +199,7 @@ const server = http.createServer(async (req, res) => {
   // 2. GET /api/orders - list current active orders
   if (pathname === '/api/orders' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() }));
+    res.end(publicJson({ orders, archivedOrders, availability: availability(), menu: store.publicMenu() }));
     return;
   }
 
@@ -170,7 +208,9 @@ const server = http.createServer(async (req, res) => {
     const manual = pathname === '/api/kitchen/orders';
     try {
       const data = await readJsonBody(req);
+      const user = manual ? null : telegramUser(data.telegramInitData, botToken);
       const duplicate = data.clientRequestId && [...orders, ...archivedOrders].find(o => o.clientRequestId === data.clientRequestId);
+      if (duplicate && duplicate.trackingTokenHash && !ownsOrder(duplicate, { ...data, user })) { json(res, 409, { error: 'Ключ запиту вже використано' }); return; }
       if (duplicate) { json(res, 200, { success: true, order: duplicate }); return; }
       const cafe = store.activePoint();
       if (!manual && (!cafe.acceptingOrders || cafe.onBreak)) { json(res, 409, { error: cafe.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено', code: cafe.onBreak ? 'LUNCH_BREAK' : 'ORDERS_PAUSED' }); return; }
@@ -193,6 +233,9 @@ const server = http.createServer(async (req, res) => {
         timeZone: store.activePoint().timeZone,
         clientRequestId: data.clientRequestId || null,
         source: manual ? 'kitchen' : 'client',
+        telegramUserId: user?.id || null,
+        notificationsEnabled: Boolean(user && data.notificationsEnabled === true),
+        trackingTokenHash: !manual && typeof data.trackingToken === 'string' && data.trackingToken.length >= 32 && data.trackingToken.length <= 256 ? trackingHash(data.trackingToken) : null,
         confirmedReadyAt: manual ? timing.baselineReadyAt : null,
         acceptedAt: manual ? createdAt : null,
         kitchenDelayMinutes: 0,
@@ -204,7 +247,7 @@ const server = http.createServer(async (req, res) => {
         napkins: data.napkins ?? true,
         notification: 'Замовлення оформлено. Очікуємо підтвердження часу кухнею.',
         orderType: data.orderType || 'pickup',
-        customerName: data.customerName || 'Telegram Замовник',
+        customerName: user?.first_name ? `${user.first_name} (Telegram)` : data.customerName || 'Telegram Замовник',
         phoneNumber: typeof data.phoneNumber === 'string' ? data.phoneNumber.trim().slice(0, 50) : '',
         totalPrice: data.totalPrice || data.finalTotal || 0,
         deliveryAddress: data.deliveryAddress || null,
@@ -221,9 +264,9 @@ const server = http.createServer(async (req, res) => {
       broadcast('new_order', newOrder);
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, order: newOrder }));
+      res.end(publicJson({ success: true, order: newOrder }));
     } catch (err) {
-      console.error('[POST /api/orders error]', err);
+      console.error('[POST /api/orders error]', err.status || 400);
       res.writeHead(err.status || 400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
     }
@@ -273,7 +316,7 @@ const server = http.createServer(async (req, res) => {
           orders.push(restored);
           broadcast('order_status_updated', { id: orderId, status: 'ready', order: restored });
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, order: restored }));
+          res.end(publicJson({ success: true, order: restored }));
           return;
         }
       }
@@ -309,7 +352,7 @@ const server = http.createServer(async (req, res) => {
 
         broadcast('order_status_updated', { id: orderId, status: 'archived', order: completed });
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, order: completed }));
+        res.end(publicJson({ success: true, order: completed }));
         return;
       }
 
@@ -317,7 +360,7 @@ const server = http.createServer(async (req, res) => {
       broadcast('order_status_updated', { id: orderId, status, order });
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, order }));
+      res.end(publicJson({ success: true, order }));
     } catch (err) {
       res.writeHead(err.status || 400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
@@ -423,7 +466,7 @@ const server = http.createServer(async (req, res) => {
     };
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(analytics));
+    res.end(publicJson(analytics));
     return;
   }
 

@@ -11,10 +11,6 @@ import AboutModal from './components/AboutModal';
 import CafeStatus from './components/CafeStatus';
 import { orderSync } from './utils/orderSync';
 
-function savedOrder() {
-  try { return JSON.parse(localStorage.getItem('shawarma_active_order') || 'null'); } catch { return null; }
-}
-
 export default function App() {
   const requestRef = useRef(null);
   const [activeCategory, setActiveCategory] = useState('');
@@ -27,7 +23,7 @@ export default function App() {
   const [view, setView] = useState('menu'); // 'menu' | 'checkout' | 'order-status'
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [lastPlacedOrder, setLastPlacedOrder] = useState(savedOrder);
+  const [lastPlacedOrder, setLastPlacedOrder] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
   const [user, setUser] = useState(null);
   const canAddToCart = availability?.acceptingOrders === true;
@@ -273,14 +269,13 @@ export default function App() {
       }))
     };
 
-    // Broadcast across all connected KDS screens
+    // Submit once; Sync queues the kitchen event and Telegram notifications.
     // Reuse the request key after an unknown network result, even if the displayed slot advanced.
-    requestRef.current ||= crypto.randomUUID();
+    requestRef.current ||= { id: crypto.randomUUID(), token: crypto.randomUUID() + crypto.randomUUID() };
     let accepted;
-    try { accepted = await orderSync.createOrder({ ...kdsOrder, clientRequestId: requestRef.current }); }
+    try { accepted = await orderSync.createOrder({ ...kdsOrder, clientRequestId: requestRef.current.id, trackingToken: requestRef.current.token, telegramInitData: tg.webApp?.initData || '', notificationsEnabled: orderData.notificationsEnabled }); }
     catch (error) { if (error.status === 409) await refreshMenu(); throw error; }
     requestRef.current = null;
-    try { localStorage.setItem('shawarma_active_order', JSON.stringify(accepted)); } catch {}
     setLastPlacedOrder(accepted);
     setCart([]);
     setView('order-status');
@@ -288,7 +283,6 @@ export default function App() {
 
   // Reset to menu for new order
   const handleResetToMenu = () => {
-    try { localStorage.removeItem('shawarma_active_order'); } catch {}
     setLastPlacedOrder(null);
     setView('menu');
   };
@@ -360,7 +354,8 @@ export default function App() {
 
           {view === 'order-status' && (
             <OrderSuccessModal
-              order={lastPlacedOrder || { id: '1044', finalTotal: 180, deliveryType: 'pickup', items: [] }}
+              order={lastPlacedOrder}
+              telegramNotifications={availability?.telegramNotifications}
               onReset={handleResetToMenu}
             />
           )}

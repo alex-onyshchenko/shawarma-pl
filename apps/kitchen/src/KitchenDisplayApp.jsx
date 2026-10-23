@@ -12,7 +12,6 @@ import {
   Maximize2,
   Minimize2,
   PlusCircle,
-  RotateCcw,
   Bike,
   UserCheck,
   Bell,
@@ -140,15 +139,12 @@ export default function KitchenDisplayApp() {
     return runAction(action);
   };
 
-  const advanceOrder = (orderId, currentStatus) => changeStatus(orderId,
-    currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived');
+  const advanceOrder = (orderId, currentStatus) => {
+    if (currentStatus === 'ready' && !window.confirm(`Підтвердити видачу замовлення #${orderId}?`)) return;
+    return changeStatus(orderId, currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived');
+  };
 
   const acceptOrder = (orderId, delayMinutes) => runAction(() => orderSync.acceptOrder(orderId, delayMinutes));
-
-  const revertOrder = (orderId, currentStatus, event) => {
-    event.stopPropagation();
-    changeStatus(orderId, currentStatus === 'ready' ? 'cooking' : 'new');
-  };
 
   // Toggle fullscreen mode (Kiosk)
   const toggleFullscreen = () => {
@@ -160,9 +156,6 @@ export default function KitchenDisplayApp() {
       setIsFullscreen(false);
     }
   };
-
-  // Restore archived order
-  const restoreArchivedOrder = order => runAction(() => orderSync.updateStatus(order.id, 'ready'));
 
   const getOrdersByStatus = status => orders.filter(order => order.status === status)
     .sort((a, b) => (a.confirmedReadyAt || a.baselineReadyAt || 0) - (b.confirmedReadyAt || b.baselineReadyAt || 0));
@@ -313,7 +306,6 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onRevert={revertOrder}
                   onAccept={acceptOrder}
                   busy={busy}
                 />
@@ -352,7 +344,6 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onRevert={revertOrder}
                   onAccept={acceptOrder}
                   busy={busy}
                 />
@@ -391,7 +382,6 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onRevert={revertOrder}
                   onAccept={acceptOrder}
                   busy={busy}
                 />
@@ -437,13 +427,6 @@ export default function KitchenDisplayApp() {
                         </div>
                       ))}
                     </div>
-                    <button
-                      onClick={() => restoreArchivedOrder(ord)}
-                      className="text-xs text-orange-400 hover:underline pt-1 flex items-center gap-1"
-                    >
-                      <RotateCcw size={12} />
-                      <span>Повернути в "Готові"</span>
-                    </button>
                   </div>
                 ))
               )}
@@ -456,7 +439,7 @@ export default function KitchenDisplayApp() {
 }
 
 // Order cards use a compact type scale with emphasis on ID, deadline and dishes.
-function OrderCard({ order, currentTime, onAdvance, onRevert, onAccept, busy }) {
+function OrderCard({ order, currentTime, onAdvance, onAccept, busy }) {
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
   const isDelayed = remaining !== null && remaining < 0 && order.status !== 'ready';
@@ -472,7 +455,6 @@ function OrderCard({ order, currentTime, onAdvance, onRevert, onAccept, busy }) 
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 break-all text-[26px] font-semibold leading-none tracking-tight text-zinc-50 tabular-nums">#{order.id}</span>
         <div className="flex shrink-0 items-center gap-1.5">
-          {order.status !== 'new' && <button disabled={busy} onClick={event => onRevert(order.id, order.status, event)} className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50" title="Повернути статус назад"><RotateCcw size={15}/></button>}
           <div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium tabular-nums ${isCritical ? 'border-red-500/40 bg-red-500/15 text-red-200' : isDelayed ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-zinc-700/70 bg-zinc-800/50 text-zinc-300'}`}>
             {isDelayed ? <AlertTriangle size={14}/> : <Clock size={14}/>}
             <span>{order.status === 'ready' ? 'Готово' : remaining === null ? 'Без часу' : remaining >= 0 ? `До видачі ${remaining} хв` : `Запізнення ${Math.abs(remaining)} хв`}</span>

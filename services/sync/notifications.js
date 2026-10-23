@@ -9,6 +9,7 @@ export function notificationText(order, kind) {
   if (kind === 'confirmed') return order.kitchenDelayMinutes > 0
     ? `⚠️ Замовлення #${order.id} вже в черзі! Через навантаження кухні новий час видачі — ${at}. Дякуємо за розуміння!`
     : `🎯 Час видачі замовлення #${order.id} підтверджено: ${at}. Оплата при отриманні. Чекаємо на вас!`;
+  if (kind === 'cancelled') return `❌ Замовлення #${order.id} скасовано кухнею.\nПричина: ${order.cancellationComment}\nПерепрошуємо за незручності.`;
   if (kind === 'cooking') return `🔥 Ваше замовлення #${order.id} вже готується!\nОрієнтовний час видачі: ${at}.\nПовідомимо, щойно все буде готово.`;
   return `✅ Замовлення #${order.id} готове до видачі!\n📍 ${order.selectedLocation?.name || order.pointName}\nЧекаємо на вас. Смачного!`;
 }
@@ -25,6 +26,7 @@ export function createNotifications(db, { token = '', fetcher = fetch, now = Dat
   let busy = false;
   function enqueue(order, kind) {
     if (!token || !order?.telegramUserId || !order.notificationsEnabled) return;
+    if (kind === 'cancelled') db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending' AND kind!='cancelled'").run(key(order));
     db.prepare('INSERT OR IGNORE INTO telegram_outbox(order_key,kind,chat_id,text,next_at) VALUES(?,?,?,?,?)')
       .run(key(order), kind, order.telegramUserId, notificationText(order, kind), now());
   }

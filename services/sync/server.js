@@ -61,7 +61,7 @@ function broadcast(eventType, payload) {
       if (order) {
         if (eventType === 'new_order') notifications.enqueue(order, 'placed');
         else if (order.status === 'new' && order.acceptedAt) notifications.enqueue(order, 'confirmed');
-        else if (['cooking', 'ready'].includes(order.status)) notifications.enqueue(order, order.status);
+        else if (['cooking', 'ready', 'cancelled'].includes(order.status)) notifications.enqueue(order, order.status);
       }
       store.db.exec('COMMIT');
     } catch (error) { store.db.exec('ROLLBACK'); throw error; }
@@ -149,7 +149,7 @@ const server = http.createServer(async (req, res) => {
       store.db.exec('BEGIN IMMEDIATE');
       try {
         store.set('orders', { orders, archivedOrders, nextOrderId });
-        if (['cooking', 'ready'].includes(order.status)) notifications.enqueue(order, order.status);
+        if (['cooking', 'ready', 'cancelled'].includes(order.status)) notifications.enqueue(order, order.status);
         else if (order.status === 'new') notifications.enqueue(order, order.acceptedAt ? 'confirmed' : 'placed');
         store.db.exec('COMMIT');
       } catch (error) { store.db.exec('ROLLBACK'); throw error; }
@@ -300,6 +300,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const cancelMatch = pathname.match(/^\/api\/orders\/([^/]+)\/cancel$/);
+  if (cancelMatch && req.method === 'POST') {
+    try {
+      const id = decodeURIComponent(cancelMatch[1]);
+      const { comment } = await readJsonBody(req);
+      if (typeof comment !== 'string' || !comment.trim() || comment.trim().length > 500) {
+        json(res, 400, { error: 'Вкажіть причину скасування (до 500 символів)' }); return;
+      }
+      const previous = archivedOrders.find(order => order.id === id);
+      if (previous?.status === 'cancelled') { json(res, 200, { success: true, order: previous }); return; }
+      const index = orders.findIndex(order => order.id === id);
+      if (index === -1) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      const order = orders[index];
+      if (order.status !== 'new') { json(res, 409, { error: 'Скасувати можна лише нове замовлення до початку приготування' }); return; }
+      const cancelled = { ...order, status: 'cancelled', cancellationComment: comment.trim(), cancelledAt: Date.now(), notification: `Замовлення скасовано. Причина: ${comment.trim()}` };
+      orders.splice(index, 1);
+      archivedOrders.unshift(cancelled);
+      broadcast('order_status_updated', { id, status: 'cancelled', order: cancelled });
+      json(res, 200, { success: true, order: cancelled });
+    } catch (error) { json(res, error.status || 400, { error: error.message }); }
+    return;
+  }
+
   // 4. PATCH /api/orders/:id/status - update order status
   const statusMatch = pathname.match(/^\/api\/orders\/([^/]+)\/status$/);
   if (statusMatch && req.method === 'PATCH') {
@@ -316,6 +339,7 @@ const server = http.createServer(async (req, res) => {
         const archIndex = archivedOrders.findIndex(o => o.id === orderId);
         if (archIndex > -1) {
           const archived = archivedOrders[archIndex];
+          if (archived.status === 'cancelled') { json(res, 409, { error: 'Скасоване замовлення не можна відновити' }); return; }
           const restored = { ...archived, status: 'ready', timingMode: archived.timingMode || 'asap', acceptedAt: archived.acceptedAt || Date.now(), confirmedReadyAt: archived.confirmedReadyAt || Date.now() };
           archivedOrders.splice(archIndex, 1);
           orders.push(restored);
@@ -385,7 +409,7 @@ const server = http.createServer(async (req, res) => {
 
   // 6. GET /api/analytics - analytics data
   if (pathname === '/api/analytics' && req.method === 'GET') {
-    const allOrders = [...orders, ...archivedOrders];
+    const allOrders = [...orders, ...archivedOrders].filter(order => order.status !== 'cancelled');
     const now = Date.now();
     const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
     const startOfWeek = new Date(now - 7 * 86400000);
@@ -415,7 +439,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Compute revenue per product from archived orders only (have full price context)
     const revenuePerProduct = {};
-    for (const o of archivedOrders) {
+    for (const o of archivedOrders.filter(order => order.status !== 'cancelled')) {
       // approximate: distribute totalPrice evenly among items weighted by qty
       const totalQty = (o.items || []).reduce((s, i) => s + (i.qty || 1), 0);
       for (const item of (o.items || [])) {

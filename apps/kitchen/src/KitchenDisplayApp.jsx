@@ -44,6 +44,8 @@ export default function KitchenDisplayApp() {
   const busyRef = useRef(false);
   const [error, setError] = useState('');
   const [earlyAction, setEarlyAction] = useState(null);
+  const [cancelOrderId, setCancelOrderId] = useState(null);
+  const [cancelComment, setCancelComment] = useState('');
 
   const applySnapshot = data => {
     setOrders(data.orders || []);
@@ -60,9 +62,11 @@ export default function KitchenDisplayApp() {
     try {
       await action();
       applySnapshot(await orderSync.getOrders());
+      return true;
     } catch (error) {
       if (error.code === 'EARLY_START') setEarlyAction(action.early);
       else setError(error.message || 'Не вдалося виконати дію');
+      return false;
     } finally { busyRef.current = false; setBusy(false); }
   };
 
@@ -106,7 +110,7 @@ export default function KitchenDisplayApp() {
         setTimeout(() => setNewOrderAlert(null), 4000);
       },
       onStatusUpdate: ({ id, status, order }) => {
-        if (status === 'archived') {
+        if (['archived', 'cancelled'].includes(status)) {
           setOrders(prev => prev.filter(o => o.id !== id));
           if (order) {
             setArchivedOrders(prev => [order, ...prev.filter(o => o.id !== id)]);
@@ -264,6 +268,13 @@ export default function KitchenDisplayApp() {
       </header>
 
       {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
+      {cancelOrderId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><form role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-lg space-y-5 rounded-2xl border border-zinc-700 bg-zinc-900 p-6" onSubmit={async event => { event.preventDefault(); if (await runAction(() => orderSync.cancelOrder(cancelOrderId, cancelComment.trim()))) setCancelOrderId(null); }}>
+        <h2 id="cancel-title" className="text-xl font-semibold">Скасувати замовлення #{cancelOrderId}?</h2>
+        <p className="text-sm leading-6 text-zinc-400">Замовлення перейде в архів. Клієнт отримає причину скасування в Telegram, якщо дозволив повідомлення бота.</p>
+        <label className="block text-sm text-zinc-300">Причина скасування<textarea autoFocus required maxLength={500} rows={3} value={cancelComment} disabled={busy} onChange={event => setCancelComment(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-white outline-none focus:border-orange-400" placeholder="Наприклад, закінчилася курка"/></label>
+        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-medium" onClick={() => { setCancelOrderId(null); setError(''); }}>Залишити замовлення</button><button disabled={busy || !cancelComment.trim()} className="rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold disabled:opacity-40">{busy ? 'Скасовуємо…' : 'Скасувати замовлення'}</button></div>
+      </form></div>}
       {showManualOrder && <ManualOrderModal menu={menu} availability={availability} onClose={() => setShowManualOrder(false)} onCreated={order => { setOrders(previous => [order, ...previous.filter(item => item.id !== order.id)]); setShowManualOrder(false); }} />}
       {earlyAction && <div role="alertdialog" aria-modal="true" aria-labelledby="early-title" className="fixed inset-0 z-50 bg-red-950/95 flex items-center justify-center p-6">
         <div className="max-w-xl space-y-6 text-center">
@@ -307,6 +318,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
               ))
@@ -345,6 +357,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
               ))
@@ -383,6 +396,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
               ))
@@ -411,15 +425,16 @@ export default function KitchenDisplayApp() {
             <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
               {archivedOrders.length === 0 ? (
                 <div className="text-center py-20 text-zinc-500">
-                  <p>В архіві ще немає виданих замовлень за зміну.</p>
+                  <p>В архіві ще немає завершених замовлень за зміну.</p>
                 </div>
               ) : (
                 archivedOrders.map((ord, i) => (
                   <div key={i} className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-mono font-bold text-lg text-white">#{ord.id}</span>
-                      <span className="text-xs text-emerald-400 font-medium">Видано о {ord.completedAt}</span>
+                      <span className={`text-xs font-medium ${ord.status === 'cancelled' ? 'text-red-300' : 'text-emerald-400'}`}>{ord.status === 'cancelled' ? 'Скасовано' : `Видано о ${ord.completedAt}`}</span>
                     </div>
+                    {ord.status === 'cancelled' && <p className="break-words text-sm text-red-200">Причина: {ord.cancellationComment}</p>}
                     <div className="text-xs text-zinc-300">
                       {ord.items.map((it, idx) => (
                         <div key={idx}>
@@ -439,7 +454,7 @@ export default function KitchenDisplayApp() {
 }
 
 // Order cards use a compact type scale with emphasis on ID, deadline and dishes.
-function OrderCard({ order, currentTime, onAdvance, onAccept, busy }) {
+function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, busy }) {
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
   const isDelayed = remaining !== null && remaining < 0 && order.status !== 'ready';
@@ -507,6 +522,7 @@ function OrderCard({ order, currentTime, onAdvance, onAccept, busy }) {
         <p className="mb-2 text-xs text-zinc-400">Підтвердьте час видачі:</p>
         <div className="grid grid-cols-2 gap-2">{[0, 5, 10, 15].map(delay => <button key={delay} disabled={busy} onClick={() => onAccept(order.id, delay)} className={`min-h-[60px] rounded-xl px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${delay === 0 ? 'bg-emerald-700 hover:bg-emerald-600' : delay <= 10 ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-700 hover:bg-red-600'}`}><span className="block opacity-90">{delay === 0 ? 'Без змін' : `+${delay} хв`}</span><span className="mt-0.5 block text-lg font-semibold tabular-nums">{formatTime(order.baselineReadyAt + delay * MINUTE, order.timeZone)}</span></button>)}</div>
       </div> : <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>}
+      {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50"><X size={14}/>Скасувати замовлення</button>}
     </div>
   </article>;
 }

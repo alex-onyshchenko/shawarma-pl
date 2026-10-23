@@ -4,3 +4,5 @@
 
 .ingredient-options .photo{height:25px;width:25px;border-radius:5px}.ingredient-options .photo svg{height:14px;width:14px}
 .recipe-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.recipe-chip{display:flex;align-items:center;gap:7px;background:#232321;border:1px solid #3e3d35;border-radius:12px;padding:6px 8px 6px 12px;max-width:100%;color:#fdba74}.recipe-chip .photo{width:28px;height:28px;border-radius:7px;flex-shrink:0}.ingredient-name{display:flex;align-items:center;gap:8px;font-size:13px;color:#e4e4e7;padding:5px 0;text-align:left;overflow-wrap:anywhere}.ingredient-name svg{color:#71717a}.recipe-chip .icon-button{width:28px;height:28px}.ingredient-picker,.ingredient-editor{background:#111113;border:1px solid #303035;padding:16px;border-radius:14px;margin-top:12px}.ingredient-picker .hint{margin-bottom:12px}.ingredient-picker .button{font-size:12px;padding:8px 10px}.ingredient-picker .button svg:first-child{color:#fdba74}.ingredient-actions{display:flex;flex-wrap:wrap;gap:8px}.ingredient-editor .photo-preview{width:80px;height:80px}
+
+.product-emoji{font-size:32px;line-height:1}

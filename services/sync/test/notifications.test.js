@@ -77,3 +77,18 @@ test('queue writes roll back with the order transaction', () => {
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM telegram_outbox').get().count, 0);
   } finally { db.close(); }
 });
+
+test('cancellation supersedes pending confirmations and sends its reason once', async () => {
+  const db = new DatabaseSync(':memory:'); const sent = [];
+  try {
+    const queue = createNotifications(db, { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } });
+    queue.enqueue(order, 'placed'); queue.enqueue(order, 'confirmed');
+    const cancelled = { ...order, cancellationComment: 'Закінчилася курка' };
+    queue.enqueue(cancelled, 'cancelled'); queue.enqueue(cancelled, 'cancelled');
+    await queue.tick(); await queue.tick();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /скасовано кухнею/);
+    assert.match(sent[0].text, /Закінчилася курка/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM telegram_outbox WHERE state='cancelled'").get().n, 2);
+  } finally { db.close(); }
+});

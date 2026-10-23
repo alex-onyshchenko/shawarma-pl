@@ -25,6 +25,9 @@ export const orderSync = {
   async acceptOrder(id, delayMinutes) {
     return (await request(`/api/orders/${encodeURIComponent(id)}/accept`, { method: 'POST', body: { delayMinutes } })).order;
   },
+  async cancelOrder(id, comment) {
+    return (await request(`/api/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST', body: { comment } })).order;
+  },
   async updateStatus(id, status, options = {}) {
     return (await request(`/api/orders/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: { status, ...options } })).order;
   },

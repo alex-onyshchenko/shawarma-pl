@@ -65,6 +65,29 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(declined.body.order.notificationsEnabled, false);
     assert.equal((await call('/api/client/notifications', 'POST', { id: declined.body.order.id, telegramInitData: body.telegramInitData })).status, 200);
     await waitFor(() => sent().length === 5);
+    const cancelled = await call('/api/orders', 'POST', { ...body, clientRequestId: 'cancel-test' });
+    assert.equal(cancelled.status, 201);
+    const cancelPath = '/api/orders/' + cancelled.body.order.id;
+    for (const comment of ['', '   ', 'x'.repeat(501), 123]) {
+      assert.equal((await call(cancelPath + '/cancel', 'POST', { comment })).status, 400);
+    }
+    const result = await call(cancelPath + '/cancel', 'POST', { comment: '  Закінчилася курка  ' });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.order.status, 'cancelled');
+    assert.equal(result.body.order.cancellationComment, 'Закінчилася курка');
+    assert.ok(!JSON.stringify(result.body).includes('telegramUserId'));
+    const repeated = await call(cancelPath + '/cancel', 'POST', { comment: 'Інша причина' });
+    assert.equal(repeated.status, 200);
+    assert.equal(repeated.body.order.cancellationComment, 'Закінчилася курка');
+    const snapshot = (await call('/api/orders')).body;
+    assert.ok(!snapshot.orders.some(order => order.id === cancelled.body.order.id));
+    assert.equal(snapshot.archivedOrders.filter(order => order.id === cancelled.body.order.id).length, 1);
+    assert.equal((await call(cancelPath + '/status', 'PATCH', { status: 'ready' })).status, 409);
+    assert.equal((await call('/api/orders/' + id + '/cancel', 'POST', { comment: 'Too late' })).status, 409);
+    await waitFor(() => sent().some(message => message.text.includes('скасовано кухнею')));
+    assert.equal(sent().filter(message => message.text.includes('скасовано кухнею')).length, 1);
+    assert.match(sent().find(message => message.text.includes('скасовано кухнею')).text, /Закінчилася курка/);
+    assert.equal((await call('/api/analytics')).body.summary.totalOrders, 2);
     assert.ok(!output.includes(token));
   } finally {
     if (child.exitCode === null && child.signalCode === null) { const ended = once(child, 'exit'); child.kill(); await ended; }

@@ -15,10 +15,8 @@ import {
   Bike,
   UserCheck,
   Bell,
-  Archive,
   ChefHat,
   Sparkles,
-  History,
   X
 } from 'lucide-react';
 import { kdsSound, requestScreenWakeLock, releaseScreenWakeLock } from './kdsSound';
@@ -29,12 +27,10 @@ import OrderExtras from './components/OrderExtras';
 
 export default function KitchenDisplayApp() {
   const [orders, setOrders] = useState([]);
-  const [archivedOrders, setArchivedOrders] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isWakeLockActive, setIsWakeLockActive] = useState(false);
-  const [showArchive, setShowArchive] = useState(false);
   const [newOrderAlert, setNewOrderAlert] = useState(null);
 
   const [availability, setAvailability] = useState(null);
@@ -49,7 +45,6 @@ export default function KitchenDisplayApp() {
 
   const applySnapshot = data => {
     setOrders(data.orders || []);
-    setArchivedOrders(data.archivedOrders || []);
     if (data.availability) setAvailability(data.availability);
     if (data.menu) setMenu(data.menu);
   };
@@ -112,9 +107,6 @@ export default function KitchenDisplayApp() {
       onStatusUpdate: ({ id, status, order }) => {
         if (['archived', 'cancelled'].includes(status)) {
           setOrders(prev => prev.filter(o => o.id !== id));
-          if (order) {
-            setArchivedOrders(prev => [order, ...prev.filter(o => o.id !== id)]);
-          }
         } else {
           setOrders(prev => {
             const exists = prev.some(o => o.id === id);
@@ -129,7 +121,6 @@ export default function KitchenDisplayApp() {
       },
       onReset: (data) => {
         if (data.orders) setOrders(data.orders);
-        if (data.archivedOrders) setArchivedOrders(data.archivedOrders);
       }
     });
 
@@ -233,16 +224,6 @@ export default function KitchenDisplayApp() {
             {isSoundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
 
-          {/* Archive / History */}
-          <button
-            onClick={() => setShowArchive(true)}
-            className="p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-xl transition-all relative active:scale-95"
-            title="Архів виданих замовлень"
-          >
-            <Archive size={18} />
-
-          </button>
-
           {/* Fullscreen (Kiosk Mode) */}
           <button
             onClick={toggleFullscreen}
@@ -270,7 +251,7 @@ export default function KitchenDisplayApp() {
       {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
       {cancelOrderId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><form role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-lg space-y-5 rounded-2xl border border-zinc-700 bg-zinc-900 p-6" onSubmit={async event => { event.preventDefault(); if (await runAction(() => orderSync.cancelOrder(cancelOrderId, cancelComment.trim()))) setCancelOrderId(null); }}>
         <h2 id="cancel-title" className="text-xl font-semibold">Скасувати замовлення #{cancelOrderId}?</h2>
-        <p className="text-sm leading-6 text-zinc-400">Замовлення перейде в архів. Клієнт отримає причину скасування в Telegram, якщо дозволив повідомлення бота.</p>
+        <p className="text-sm leading-6 text-zinc-400">Замовлення зникне з робочого екрана. Історія збережеться. Клієнт отримає причину скасування в Telegram, якщо дозволив повідомлення бота.</p>
         <label className="block text-sm text-zinc-300">Причина скасування<textarea autoFocus required maxLength={500} rows={3} value={cancelComment} disabled={busy} onChange={event => setCancelComment(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-white outline-none focus:border-orange-400" placeholder="Наприклад, закінчилася курка"/></label>
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
         <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-medium" onClick={() => { setCancelOrderId(null); setError(''); }}>Залишити замовлення</button><button disabled={busy || !cancelComment.trim()} className="rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold disabled:opacity-40">{busy ? 'Скасовуємо…' : 'Скасувати замовлення'}</button></div>
@@ -405,50 +386,7 @@ export default function KitchenDisplayApp() {
         </div>
       </div>
 
-      {/* Archive Modal Drawer */}
-      {showArchive && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="w-full max-w-md bg-zinc-900 border-l border-zinc-800 p-5 flex flex-col h-full shadow-2xl">
-            <div className="flex justify-between items-center pb-4 border-b border-zinc-800 mb-4">
-              <div className="flex items-center gap-2">
-                <Archive size={20} className="text-orange-400" />
-                <h3 className="text-lg font-bold text-white">Архів виданих замовлень</h3>
-              </div>
-              <button
-                onClick={() => setShowArchive(false)}
-                className="p-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-lg transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar space-y-3">
-              {archivedOrders.length === 0 ? (
-                <div className="text-center py-20 text-zinc-500">
-                  <p>В архіві ще немає завершених замовлень за зміну.</p>
-                </div>
-              ) : (
-                archivedOrders.map((ord, i) => (
-                  <div key={i} className="bg-zinc-950 p-3.5 rounded-xl border border-zinc-800 space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-mono font-bold text-lg text-white">#{ord.id}</span>
-                      <span className={`text-xs font-medium ${ord.status === 'cancelled' ? 'text-red-300' : 'text-emerald-400'}`}>{ord.status === 'cancelled' ? 'Скасовано' : `Видано о ${ord.completedAt}`}</span>
-                    </div>
-                    {ord.status === 'cancelled' && <p className="break-words text-sm text-red-200">Причина: {ord.cancellationComment}</p>}
-                    <div className="text-xs text-zinc-300">
-                      {ord.items.map((it, idx) => (
-                        <div key={idx}>
-                          {it.qty}x {it.name}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

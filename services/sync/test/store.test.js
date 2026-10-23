@@ -12,7 +12,7 @@ test('SQLite retains point settings, menus, draft-only invariant and order state
   try {
     const filename = join(directory, 'test.sqlite');
     store = createStore(filename);
-    const point = store.updatePoint('demo', { name: 'Saved name', acceptingOrders: false });
+    const point = store.updatePoint('demo', { name: 'Saved name', acceptingOrders: false, timeZone: 'Europe/Warsaw', weeklyHours: Array.from({ length: 7 }, () => ({ closed: false, open: '11:15', close: '20:45' })) });
     const draft = store.createPoint({ name: 'Inactive future point', address: 'Another street' });
     store.updateMenu('demo', '12', { price: 175, available: false, product: { price: 175, name: 'Updated shared name' } });
     assert.equal(store.product('12').price, 40);
@@ -21,6 +21,8 @@ test('SQLite retains point settings, menus, draft-only invariant and order state
     store.close();
     store = createStore(filename);
     assert.equal(store.activePoint().name, 'Saved name');
+    assert.equal(store.activePoint().timeZone, 'Europe/Warsaw');
+    assert.deepEqual(store.activePoint().weeklyHours, point.weeklyHours);
     assert.equal(store.activePoint().acceptingOrders, false);
     assert.equal(store.point(draft.id).active, false);
     assert.equal(store.menu('demo').find(item => item.id === '12').price, 175);

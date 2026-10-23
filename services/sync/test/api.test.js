@@ -11,7 +11,7 @@ const testTimeZone = hourOffset === 0 ? 'Etc/GMT' : `Etc/GMT${hourOffset > 0 ? '
 before(async () => {
   child = spawn(process.execPath, ['server.js'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', OPEN_HOUR: '0', CLOSE_HOUR: '24', STORE_TIMEZONE: testTimeZone, ADMIN_TOKEN: 'test-admin-key' },
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', OPEN_HOUR: 'invalid', CLOSE_HOUR: 'invalid', STORE_TIMEZONE: 'Invalid/Zone', ADMIN_TOKEN: 'test-admin-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   base = await new Promise((resolve, reject) => {
@@ -32,6 +32,27 @@ before(async () => {
       reject(new Error(`Server exited (${code}): ${output}`));
     });
   });
+  // Test hours are configured through the same database-backed API as Admin.
+  const initial = await (await fetch(`${base}/api/availability`)).json();
+  assert.equal(initial.timeZone, 'Europe/Kyiv');
+  assert.equal(initial.openMinute, 600);
+  assert.equal(initial.closeMinute, 1320);
+  const login = await fetch(`${base}/api/admin/session`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'test-admin-key' }),
+  });
+  assert.equal(login.status, 200);
+  const setupCookie = login.headers.get('set-cookie').split(';')[0];
+  const configured = await fetch(`${base}/api/admin/points/demo`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: setupCookie },
+    body: JSON.stringify({ timeZone: testTimeZone, weeklyHours: Array.from({ length: 7 }, () => ({ closed: false, open: '00:00', close: '24:00' })) }),
+  });
+  assert.equal(configured.status, 200);
+  const updated = await (await fetch(`${base}/api/availability`)).json();
+  assert.equal(updated.timeZone, testTimeZone);
+  assert.equal(updated.openMinute, 0);
+  assert.equal(updated.closeMinute, 1440);
+
 });
 
 after(async () => {

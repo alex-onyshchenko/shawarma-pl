@@ -8,7 +8,7 @@ import { createServer } from '../apps/client/node_modules/vite/dist/node/index.j
 const root = fileURLToPath(new URL('..', import.meta.url));
 const child = spawn(process.execPath, ['services/sync/server.js'], {
   cwd: root,
-  env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', ADMIN_TOKEN: 'integration-admin-key', OPEN_HOUR: '0', CLOSE_HOUR: '24', STORE_TIMEZONE: `Etc/GMT${12 - new Date().getUTCHours() >= 0 ? '-' : '+'}${Math.abs(12 - new Date().getUTCHours())}` },
+  env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', ADMIN_TOKEN: 'integration-admin-key' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 const servers = [];
@@ -72,6 +72,14 @@ try {
   assert.equal(state.status, 200);
   assert.equal((await state.json()).points.filter(point => point.active).length, 1);
   console.log('PASS Admin same-origin session through its independent proxy');
+  const hourOffset = 12 - new Date().getUTCHours();
+  const timeZone = hourOffset === 0 ? 'Etc/GMT' : `Etc/GMT${hourOffset > 0 ? '-' : '+'}${Math.abs(hourOffset)}`;
+  const schedule = await fetch(`${bases.admin}/api/admin/points/demo`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: bases.admin },
+    body: JSON.stringify({ timeZone, weeklyHours: Array.from({ length: 7 }, () => ({ closed: false, open: '00:00', close: '24:00' })) }),
+  });
+  assert.equal(schedule.status, 200);
+
 
   async function subscribe(base) {
     const controller = new AbortController();

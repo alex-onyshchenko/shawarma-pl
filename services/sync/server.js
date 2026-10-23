@@ -2,21 +2,12 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createStore, hoursForPoint, quoteOrder, DEMO_POINT_ID } from './store.js';
 import { createAdminHandler } from './admin.js';
-import { DEFAULT_HOURS, MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming } from './timing.js';
+import { MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming } from './timing.js';
 
 const PORT = Number(process.env.PORT || 3002);
 const HOST = process.env.HOST || '0.0.0.0';
-const seedHours = {
-  ...DEFAULT_HOURS,
-  timeZone: process.env.STORE_TIMEZONE || DEFAULT_HOURS.timeZone,
-  openHour: Number(process.env.OPEN_HOUR ?? 10),
-  closeHour: Number(process.env.CLOSE_HOUR ?? 22),
-};
-if (!Number.isInteger(seedHours.openHour) || !Number.isInteger(seedHours.closeHour) || seedHours.openHour < 0 || seedHours.closeHour > 24 || seedHours.openHour >= seedHours.closeHour) {
-  throw new Error('OPEN_HOUR/CLOSE_HOUR must be integers with 0 <= OPEN_HOUR < CLOSE_HOUR <= 24');
-}
 const adminToken = process.env.ADMIN_TOKEN || '';
-const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url)), seedHours);
+const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url)));
 function availability() {
   const serverNow = Date.now();
   const point = store.activePoint();

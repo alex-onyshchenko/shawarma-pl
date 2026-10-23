@@ -1,16 +1,18 @@
 # Клієнт → Vercel → Telegram Mini App
 
-Клієнт — статичний Vite-сайт. Sync — окремий Node.js 24 процес із SSE та SQLite на постійному диску. Поточний Sync не переноситься у Vercel Functions: він потребує довготривалого процесу та постійного сховища. Наразі публічного Sync URL ще немає, сайт не опублікований.
+Клієнт — статичний Vite-сайт. Sync — окремий Node.js 24 процес із SSE та SQLite на постійному диску. Поточний Sync не переноситься у Vercel Functions: він потребує довготривалого процесу та постійного сховища. Публічний Sync: `https://139-162-130-216.ip.linodeusercontent.com`.
 
-## Поточний деплой: лише перегляд меню
+## Поточний деплой: клієнт із замовленнями
 
-Зараз Vercel виконує `npm run build:menu`: Vite mode `dev`, `VITE_MENU_PREVIEW=true`. API URL не потрібний; видаліть фальшиве `VITE_SYNC_API_URL` з налаштувань Vercel. Якщо Build Command перевизначено в dashboard, встановіть `npm run build:menu` або вимкніть override, щоб застосувати `vercel.json`.
+`vercel.json` задає `npm run build` (Vite mode `prod`). У Vercel встановіть для Production:
 
-Клієнт показує локальний публічний знімок `src/preview-menu.json`, фото, склад, розміри й ціни. Немає кошика, оформлення, запитів до Sync, SSE або polling. Статус кафе не імітується: показується «Замовлення незабаром». Знімок меню оновлюється лише зміною файлу та новим деплоєм, не через Admin. У знімку немає замовлень, бази даних чи секретів.
+```env
+VITE_SYNC_API_URL=https://139-162-130-216.ip.linodeusercontent.com
+```
 
-Локально: `npm run dev:menu`; перевірка: `npm run test:menu`. Звичайні `npm run dev`, `npm run build`, Docker і production-режим замовлень зберігають підключення до Sync.
+Приберіть `VITE_MENU_PREVIEW` із Environment Variables. Якщо Build Command перевизначено в dashboard, вимкніть override або встановіть `npm run build`. Після зміни env чи команди потрібен новий деплой.
 
-Нижче описане **майбутнє підключення замовлень**. Коли Sync буде готовий, змініть Vercel Build Command на `npm run build`, задайте справжній `VITE_SYNC_API_URL` і приберіть `VITE_MENU_PREVIEW`, якщо додавали його в dashboard.
+Автономний перегляд меню доступний окремо через `npm run build:menu` або `npm run dev:menu`. Він використовує локальний знімок `src/preview-menu.json`, не підключає Sync і не дозволяє замовлення. Перевірка цього режиму: `npm run test:menu`.
 
 ## 1. Підготувати Sync
 

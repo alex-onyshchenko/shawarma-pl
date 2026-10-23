@@ -24,11 +24,30 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  admin:
+    build: ../../apps/admin
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/admin/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    depends_on:
+      sync:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       API_HOST: ${API_HOST:?Set API_HOST in .env.prod}
+      ADMIN_BASIC_USER: ${ADMIN_BASIC_USER:?Set ADMIN_BASIC_USER in .env.prod}
+      ADMIN_BASIC_HASH: ${ADMIN_BASIC_HASH:?Set ADMIN_BASIC_HASH in .env.prod}
     ports:
       - "80:80"
       - "443:443"
@@ -38,6 +57,8 @@ services:
       - caddy-config:/config
     depends_on:
       sync:
+        condition: service_healthy
+      admin:
         condition: service_healthy
     logging:
       driver: json-file

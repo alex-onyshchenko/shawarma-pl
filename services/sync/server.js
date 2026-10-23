@@ -1,4 +1,6 @@
 import http from 'node:http';
+import { dirname, join } from 'node:path';
+import { createMedia } from './media.js';
 import { telegramUser, trackingHash, ownsOrder, publicJson } from './telegram.js';
 import { createNotifications } from './notifications.js';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +12,7 @@ const PORT = Number(process.env.PORT || 3002);
 const HOST = process.env.HOST || '0.0.0.0';
 const adminToken = process.env.ADMIN_TOKEN || '';
 const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url)));
+const media = createMedia(process.env.MEDIA_PATH || join(dirname(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url))), 'media'));
 const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
 const notifications = createNotifications(store.db, { token: botToken });
 const notificationTimer = setInterval(() => notifications.tick().catch(() => console.error('Notification queue unavailable')), 1000);
@@ -75,13 +78,13 @@ function broadcast(eventType, payload) {
 }
 
 // Read body helper
-function readJsonBody(req) {
+function readJsonBody(req, maxBytes = 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
     let size = 0;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > 1024 * 1024) { reject(Object.assign(new Error('Запит завеликий'), { status: 413 })); return; }
+      if (size > maxBytes) { reject(Object.assign(new Error('Запит завеликий'), { status: 413 })); return; }
       body += chunk;
     });
     req.on('end', () => {
@@ -96,7 +99,8 @@ function readJsonBody(req) {
 }
 
 const adminHandler = createAdminHandler({
-  store, readJsonBody, adminToken,
+  store, readJsonBody, adminToken, media,
+  basicUser: process.env.ADMIN_BASIC_USER || 'admin', basicPassword: process.env.ADMIN_BASIC_PASSWORD || '',
   readOrders: () => [...orders, ...archivedOrders],
   onChange: () => { broadcast('menu_updated', store.publicMenu()); broadcast('availability_updated', availability()); },
 });
@@ -107,6 +111,7 @@ const server = http.createServer(async (req, res) => {
 
   console.log(`[REQ ${new Date().toLocaleTimeString()}] ${req.method} ${pathname}`);
 
+  if (await media.serve(req, res, pathname)) return;
   if (pathname.startsWith('/api/admin/')) { await adminHandler(req, res, url); return; }
 
   // CORS headers for public API

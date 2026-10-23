@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
     }
   }
   const proxy = {
+    '/media': { target: env.SYNC_API_TARGET || 'http://127.0.0.1:3002', changeOrigin: true },
     '/api': {
       target: env.SYNC_API_TARGET || 'http://127.0.0.1:3002',
       changeOrigin: true,

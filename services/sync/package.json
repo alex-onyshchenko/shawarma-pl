@@ -13,5 +13,8 @@
     "test": "node --test",
     "start:dev": "node --env-file-if-exists=.env.dev server.js",
     "start:prod": "node --env-file-if-exists=.env.prod server.js"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
   }
 }

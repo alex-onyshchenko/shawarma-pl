@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { mediaUrl } from '../utils/orderSync';
 
 // One portrait frame for menu photos, size selection and cart thumbnails.
 export default function ProductImage({ product, className = '', children }) {
@@ -7,7 +8,7 @@ export default function ProductImage({ product, className = '', children }) {
 
   return <div className={`relative aspect-[2/3] shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-[#0b0b0b] select-none ${className}`}>
     {hasPhoto ? <img
-      src={product.imageUrl}
+      src={mediaUrl(product.imageUrl)}
       alt={product.name}
       width="320"
       height="480"

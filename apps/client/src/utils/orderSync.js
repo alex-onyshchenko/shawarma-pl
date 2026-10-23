@@ -46,3 +46,6 @@ export const orderSync = {
     return () => { stopped = true; clearInterval(interval); };
   },
 };
+
+// Uploaded media lives on Sync; bundled /menu photos remain on the frontend.
+export const mediaUrl = url => url?.startsWith('/media/') ? baseUrl() + url : url;

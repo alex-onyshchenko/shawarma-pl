@@ -1,6 +1,6 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 
-export function createAdminHandler({ store, readJsonBody, adminToken, onChange, readOrders }) {
+export function createAdminHandler({ store, readJsonBody, adminToken, onChange, readOrders, media, basicUser = 'admin', basicPassword = '' }) {
   const attempts = new Map();
   const send = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); };
   const hash = value => createHash('sha256').update(value).digest('hex');
@@ -16,9 +16,19 @@ export function createAdminHandler({ store, readJsonBody, adminToken, onChange, 
   const cookie = (req, value, age) => `shawarma_admin=${value}; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=${age}${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`;
   return async (req, res, url) => {
     try {
+      const basicConfigured = Boolean(basicPassword);
+      if (basicConfigured) {
+        const authorization = req.headers.authorization || '';
+        const supplied = authorization.startsWith('Basic ') ? Buffer.from(authorization.slice(6), 'base64').toString('utf8') : '';
+        if (!timingSafeEqual(Buffer.from(hash(supplied)), Buffer.from(hash(`${basicUser}:${basicPassword}`)))) {
+          res.setHeader('WWW-Authenticate', 'Basic realm="Shaurmisha Admin", charset="UTF-8"');
+          send(res, 401, { error: 'Потрібен вхід адміністратора' }); return;
+        }
+      }
       if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { send(res, 403, { error: 'Недопустимое происхождение запроса' }); return; }
       if (['POST', 'PATCH', 'PUT'].includes(req.method) && !req.headers['content-type']?.startsWith('application/json')) { send(res, 415, { error: 'Ожидается JSON' }); return; }
       if (url.pathname === '/api/admin/session' && req.method === 'POST') {
+        if (basicConfigured) { send(res, 200, { authenticated: true }); return; }
         const ip = req.socket.remoteAddress;
         const previous = attempts.get(ip);
         const limit = previous && Date.now() - previous.start < 60000 ? previous : { start: Date.now(), count: 0 };
@@ -36,7 +46,7 @@ export function createAdminHandler({ store, readJsonBody, adminToken, onChange, 
         send(res, 200, { authenticated: true }); return;
       }
       const session = store.db.prepare('SELECT expires_at FROM sessions WHERE hash=?').get(sessionHash(req));
-      if (!session || session.expires_at < Date.now()) { send(res, 401, { error: 'Войдите в панель администратора' }); return; }
+      if (!basicConfigured && (!session || session.expires_at < Date.now())) { send(res, 401, { error: 'Войдите в панель администратора' }); return; }
       if (url.pathname === '/api/admin/session' && req.method === 'DELETE') {
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(req));
         res.setHeader('Set-Cookie', cookie(req, '', 0)); send(res, 200, { authenticated: false }); return;
@@ -45,10 +55,21 @@ export function createAdminHandler({ store, readJsonBody, adminToken, onChange, 
         const points = store.points();
         const orders = readOrders();
         send(res, 200, {
-          points, catalog: store.products(), menus: Object.fromEntries(points.map(point => [point.id, store.menu(point.id)])),
+          points, ingredients: store.ingredients(), catalog: store.products(), menus: Object.fromEntries(points.map(point => [point.id, store.menu(point.id)])),
           modifiers: store.get('modifiers'), audit: store.audit(), orders: orders.sort((a,b) => b.createdAt-a.createdAt).slice(0, 50),
           stats: { activeOrders: orders.filter(order => order.status !== 'archived').length, totalOrders: orders.length },
         }); return;
+      }
+      if (url.pathname === '/api/admin/images' && req.method === 'POST') {
+        const { data } = await readJsonBody(req, 8 * 1024 * 1024);
+        send(res, 201, await media.upload(data)); return;
+      }
+      if (url.pathname === '/api/admin/ingredients' && req.method === 'POST') {
+        const ingredient = store.saveIngredient(null, await readJsonBody(req)); onChange(); send(res, 201, { ingredient }); return;
+      }
+      const ingredientRoute = url.pathname.match(/^\/api\/admin\/ingredients\/([^/]+)$/);
+      if (ingredientRoute && req.method === 'PATCH') {
+        const ingredient = store.saveIngredient(decodeURIComponent(ingredientRoute[1]), await readJsonBody(req)); onChange(); send(res, 200, { ingredient }); return;
       }
       if (url.pathname === '/api/admin/points' && req.method === 'POST') {
         const point = store.createPoint(await readJsonBody(req)); onChange(); send(res, 201, { point }); return;

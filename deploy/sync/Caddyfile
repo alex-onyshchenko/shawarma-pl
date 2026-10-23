@@ -7,5 +7,21 @@
 {$API_HOST} {
 	encode zstd gzip
 
-	reverse_proxy sync:3002
+	@admin path /admin /admin/* /api/admin /api/admin/*
+	handle @admin {
+		basic_auth bcrypt "Shaurmisha Admin" {
+			{$ADMIN_BASIC_USER} {$ADMIN_BASIC_HASH}
+		}
+		@adminApi path /api/admin /api/admin/*
+		handle @adminApi {
+			reverse_proxy sync:3002
+		}
+		handle {
+			reverse_proxy admin:80
+		}
+	}
+
+	handle {
+		reverse_proxy sync:3002
+	}
 }

@@ -181,8 +181,7 @@ polling раз на 3 секунди. Історія подій не відтв�
 ## Admin API
 
 Усі запити мутації — `application/json`, з same-origin перевіркою Origin.
-Токени не повертаються в JSON, сесія передається HttpOnly/SameSite=Strict cookie
-`shawarma_admin` з Path=/api/admin. Тривалість — 8 годин; в HTTPS cookie Secure.
+На Linode `/api/admin/*` і `/admin/` захищені браузерним Basic Auth; Sync перевіряє ADMIN_BASIC_USER/ADMIN_BASIC_PASSWORD. Коли Basic Auth не налаштований, для сумісності діє сесія ADMIN_TOKEN із HttpOnly/SameSite=Strict cookie на 8 годин.
 
 | Метод | Шлях | Призначення |
 | --- | --- | --- |
@@ -215,3 +214,14 @@ polling раз на 3 секунди. Історія подій не відтв�
 `POST /api/client/notifications` принимает `{ id, telegramInitData }` и включает сообщения только для подтверждённого владельца заказа. Ответ: `{ enabled: true }`. Заказы клиенту через этот маршрут не выдаются. Без разрешения сообщения не ставятся в очередь; ручные заказы не получают адресата.
 
 Клиент использует только публичное меню/доступность, создание заказа и включение уведомлений. Общая SSE-лента остаётся для кухни; обратные переходы статусов API сохранены, в интерфейсе кухни их нет.
+
+### Інгредієнти та фото
+
+`GET /api/admin/state` також повертає `ingredients: [{ id, name, imageUrl }]`.
+
+- `POST /api/admin/ingredients` — `{ name, imageUrl? }`, створює спільний інгредієнт.
+- `PATCH /api/admin/ingredients/:id` — змінює назву або фото. Без фото `imageUrl: ""`.
+- `POST /api/admin/images` — `{ data: "<base64 без data: prefix>" }`, JPEG/PNG/WebP до 5 МБ і 40 МП. Повертає `{ imageUrl: "/media/<uuid>.webp" }`. Сервер зменшує до 1600 px та зберігає WebP.
+- `GET /media/:file.webp` — публічне фото з immutable cache. Шлях обмежений UUID-файлами.
+
+У `product` передається `ingredientIds` у порядку рецепта. Меню повертає актуальний масив `ingredients` і склад, зібраний із їхніх назв. Порожній список залишає звичайний опис. Міграція один раз створює інгредієнти з поточних рецептів, не змінюючи ціни чи оформлені замовлення.

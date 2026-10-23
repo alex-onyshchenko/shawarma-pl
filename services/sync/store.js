@@ -63,10 +63,16 @@ function validateSizes(value = []) {
     return { id, name: text(size.name, 'Розмір', 80), price: number(size.price, 0, 100000, 'Ціна розміру'), weight: text(size.weight, 'Вага розміру', 40) };
   });
 }
+function validateImage(value) {
+  const url = text(value || '', 'Зображення', 1000, false);
+  if (url && !/^https?:\/\//.test(url) && !/^\/menu\/[a-z0-9-]+\.jpg$/.test(url) && !/^\/media\/[a-f0-9-]+\.webp$/.test(url)) fail('Оберіть фотографію або http(s)-посилання');
+  return url;
+}
 function validateProduct(input) {
-  const imageUrl = text(input.imageUrl || '', 'Зображення', 1000, false);
-  if (imageUrl && !/^https?:\/\//.test(imageUrl) && !/^\/menu\/[a-z0-9-]+\.jpg$/.test(imageUrl)) fail('Вкажіть http(s)-посилання або локальне фото /menu/назва.jpg');
+  if (input.ingredientIds !== undefined && !Array.isArray(input.ingredientIds)) fail('Невірний список інгредієнтів');
+  const imageUrl = validateImage(input.imageUrl);
   return {
+    ingredientIds: Array.isArray(input.ingredientIds) ? [...input.ingredientIds] : [],
     sizes: validateSizes(input.sizes),
     name: text(input.name, 'Назва товару', 100), category: text(input.category, 'Категорія', 80),
     description: text(input.description || '', 'Опис товару', 1500, false),
@@ -160,6 +166,25 @@ export function createStore(filename, seedHours = { timeZone: 'Europe/Kyiv', ope
     }
     set('shawarmaPhotosV1', true); changed(); audit('Додано фотографії шаурми', DEMO_POINT_ID);
   });
+  if (!get('ingredientCatalogV1')) transaction(() => {
+    const ingredients = [];
+    const rows = db.prepare("SELECT DISTINCT p.id,p.data FROM products p JOIN point_menu m ON p.id=m.product_id WHERE m.visible=1").all();
+    for (const row of rows) {
+      const value = JSON.parse(row.data);
+      if (value.category !== 'Шаурма') continue;
+      const ingredientIds = (value.description || '').replace(/[.\s]+$/, '').split(',').map(name => name.trim()).filter(Boolean).map(name => {
+        let ingredient = ingredients.find(item => item.name.toLocaleLowerCase('uk') === name.toLocaleLowerCase('uk'));
+        if (!ingredient) { ingredient = { id: randomUUID(), name, imageUrl: '' }; ingredients.push(ingredient); }
+        return ingredient.id;
+      });
+      db.prepare('UPDATE products SET data=? WHERE id=?').run(JSON.stringify({ ...value, ingredientIds }), row.id);
+    }
+    set('ingredients', ingredients); set('ingredientCatalogV1', true); changed();
+  });
+  const ingredients = () => get('ingredients') || [];
+  const validateIngredientIds = ids => {
+    if (!Array.isArray(ids) || ids.length > 50 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== 'string' || !ingredients().some(item => item.id === id))) fail('Перевірте інгредієнти позиції');
+  };
   const product = id => {
     const row = db.prepare('SELECT data FROM products WHERE id=?').get(String(id));
     if (!row) fail('Товар не знайдено', 404);
@@ -167,12 +192,27 @@ export function createStore(filename, seedHours = { timeZone: 'Europe/Kyiv', ope
   };
   const menu = id => {
     point(id);
+    const catalog = ingredients();
     return db.prepare('SELECT * FROM point_menu WHERE point_id=? ORDER BY sort_order,product_id').all(id).map(row => ({
       ...product(row.product_id), sizes: JSON.parse(row.sizes), price: row.price, visible: !!row.visible, available: !!row.available, sortOrder: row.sort_order,
-    }));
+    })).map(item => {
+      const selected = (item.ingredientIds || []).map(id => catalog.find(value => value.id === id)).filter(Boolean);
+      return { ...item, ingredients: selected, description: selected.length ? selected.map(value => value.name).join(', ') + '.' : item.description };
+    });
   };
   const store = {
-    db, get, set, point, product, menu,
+    db, get, set, point, product, menu, ingredients,
+    saveIngredient(id, input) {
+      const catalog = ingredients();
+      const existing = id ? catalog.find(item => item.id === id) : null;
+      if (id && !existing) fail('Інгредієнт не знайдено', 404);
+      const value = { ...existing, ...input };
+      const name = text(value.name, 'Назва інгредієнта', 100);
+      if (catalog.some(item => item.id !== id && item.name.toLocaleLowerCase('uk') === name.toLocaleLowerCase('uk'))) fail('Інгредієнт із такою назвою вже існує', 409);
+      const saved = { id: id || randomUUID(), name, imageUrl: validateImage(value.imageUrl) };
+      transaction(() => { set('ingredients', existing ? catalog.map(item => item.id === id ? saved : item) : [...catalog, saved]); changed(); audit(existing ? 'Оновлено інгредієнт' : 'Додано інгредієнт'); });
+      return saved;
+    },
     points: () => db.prepare('SELECT id FROM points ORDER BY active DESC,rowid').all().map(row => point(row.id)),
     products: () => db.prepare('SELECT data FROM products ORDER BY rowid').all().map(row => JSON.parse(row.data)),
     activePoint: () => point(DEMO_POINT_ID),
@@ -196,6 +236,7 @@ export function createStore(filename, seedHours = { timeZone: 'Europe/Kyiv', ope
     createProduct(pointId, input) {
       point(pointId);
       const created = { ...validateProduct(input), id: randomUUID() };
+      validateIngredientIds(created.ingredientIds);
       if (created.sizes.length) created.price = Math.min(...created.sizes.map(size => size.price));
       const sortOrder = input.sortOrder ?? menu(pointId).length;
       if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 10000) fail('Невірний порядок');
@@ -210,6 +251,7 @@ export function createStore(filename, seedHours = { timeZone: 'Europe/Kyiv', ope
       point(pointId); const current = product(productId);
       const existing = menu(pointId).find(item => item.id === String(productId));
       const updated = input.product ? { ...validateProduct({ ...current, ...input.product, sizes: current.sizes, price: current.price }), id: current.id } : current;
+      validateIngredientIds(updated.ingredientIds || []);
       const entry = { sizes: existing?.sizes ?? updated.sizes ?? [], price: existing?.price ?? updated.price, visible: existing?.visible ?? true, available: existing?.available ?? true, sortOrder: existing?.sortOrder ?? menu(pointId).length, ...input };
       const sizes = validateSizes(entry.sizes);
       const price = sizes.length ? Math.min(...sizes.map(size => size.price)) : number(entry.price, 0, 100000, 'Ціна');

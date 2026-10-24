@@ -8,7 +8,6 @@ import ModifierModal from './components/ModifierModal';
 import CheckoutView from './components/CheckoutView';
 import OrderSuccessModal from './components/OrderSuccessModal';
 import AboutModal from './components/AboutModal';
-import CafeStatus from './components/CafeStatus';
 import { orderSync } from './utils/orderSync';
 import ContactGate from './components/ContactGate';
 import { maxAdditional } from './utils/orderPolicy';
@@ -299,6 +298,7 @@ function MenuApp({ profile, onProfileChange }) {
       <div className="app-content w-full max-w-2xl mx-auto relative flex flex-col">
         {/* Telegram Header */}
         <TelegramHeader
+          availability={availability}
           pointName={menu?.point.name}
           logoUrl={menu?.point.logoUrl}
           view={view}
@@ -315,9 +315,6 @@ function MenuApp({ profile, onProfileChange }) {
               {!menu && <p className="p-4 text-zinc-400 text-sm">Завантажуємо меню…</p>}
               {menuError && <div role="alert" className="p-4 text-red-300 text-sm">{menuError} <button onClick={refreshMenu} className="underline">Спробувати ще раз</button></div>}
               {menu && <p className="px-4 py-2 text-xs text-zinc-400">📍 {menu.point.address}</p>}
-              <div className="px-4 pt-1 pb-2">
-                <CafeStatus availability={availability} />
-              </div>
               <CategoryTabs
                 categories={categories}
                 activeCategory={activeCategory}

@@ -3,22 +3,9 @@ import { Coffee } from 'lucide-react';
 
 
 export function closedDescription(availability) {
-  if (availability?.point?.acceptingOrders === false) return 'Сьогодні не працюємо';
-  if (availability?.withinWorkingHours !== false) return 'Нові замовлення поки не приймаємо';
-  const timeZone = availability.timeZone || availability.point?.timeZone || 'Europe/Kyiv';
-  const now = Number.isFinite(availability.serverNow) ? availability.serverNow : Date.now();
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).map(part => [part.type, part.value]));
-  const minute = Number(parts.hour) * 60 + Number(parts.minute);
-  if (!availability.closed && minute < availability.openMinute) {
-    const opening = `${String(Math.floor(availability.openMinute / 60)).padStart(2, '0')}:${String(availability.openMinute % 60).padStart(2, '0')}`;
-    return `Відчиняємося сьогодні о ${opening}`;
-  }
-  const tomorrow = new Date(`${parts.year}-${parts.month}-${parts.day}T12:00:00Z`);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-  const date = tomorrow.toISOString().slice(0, 10);
-  const rule = availability.point?.exceptions?.find(rule => rule.date === date) || availability.point?.weeklyHours?.[(tomorrow.getUTCDay() + 6) % 7];
-  const nextDay = rule?.closed === false ? 'Приходьте завтра.' : 'Чекаємо наступного робочого дня.';
-  return `${availability.closed ? 'Сьогодні не працюємо за графіком.' : 'Сьогодні вже не працюємо.'} ${nextDay}`;
+  return availability?.point?.acceptingOrders === false
+    ? 'Сьогодні вже не працюємо.'
+    : 'Робочий час закінчився. Приходьте завтра.';
 }
 
 export default function CafeStatus({ availability }) {

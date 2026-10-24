@@ -10,8 +10,14 @@ import OrderSuccessModal from './components/OrderSuccessModal';
 import AboutModal from './components/AboutModal';
 import CafeStatus from './components/CafeStatus';
 import { orderSync } from './utils/orderSync';
+import ContactGate from './components/ContactGate';
+import { maxAdditional } from './utils/orderPolicy';
 
 export default function App() {
+  return <ContactGate>{(profile, setProfile) => <MenuApp profile={profile} onProfileChange={setProfile}/>}</ContactGate>;
+}
+
+function MenuApp({ profile, onProfileChange }) {
   const requestRef = useRef(null);
   const [activeCategory, setActiveCategory] = useState('');
   const [menu, setMenu] = useState(null);
@@ -127,6 +133,7 @@ export default function App() {
     comment,
   }) => {
     if (!canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
+    if (quantity > maxAdditional(cart, product.id)) { triggerToast('Ліміт: 5 одиниць однієї позиції та 10 товарів загалом'); return; }
     const unitPrice =
       (size?.price ?? product.price) +
       (lavash?.price || 0) +
@@ -177,6 +184,7 @@ export default function App() {
   // Quick add without modifiers
   const handleQuickAdd = (product) => {
     if (!canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
+    if (!maxAdditional(cart, product.id)) { triggerToast('Ліміт: 5 одиниць однієї позиції та 10 товарів загалом'); return; }
     const configKey = JSON.stringify({ productId: product.id });
     const existingIndex = cart.findIndex(item => item.configKey === configKey);
 
@@ -209,6 +217,8 @@ export default function App() {
   const handleUpdateQuantity = (itemId, delta) => {
     if (delta > 0 && !canAddToCart) { triggerToast(orderingUnavailableLabel); return; }
     setCart(prev => {
+      const target = prev.find(item => item.id === itemId);
+      if (delta > 0 && target && delta > maxAdditional(prev, target.product.id)) return prev;
       return prev
         .map(item => {
           if (item.id === itemId) {
@@ -274,7 +284,7 @@ export default function App() {
     requestRef.current ||= { id: crypto.randomUUID(), token: crypto.randomUUID() + crypto.randomUUID() };
     let accepted;
     try { accepted = await orderSync.createOrder({ ...kdsOrder, clientRequestId: requestRef.current.id, trackingToken: requestRef.current.token, telegramInitData: tg.webApp?.initData || '', notificationsEnabled: orderData.notificationsEnabled }); }
-    catch (error) { if (error.status === 409) await refreshMenu(); throw error; }
+    catch (error) { if (error.status === 409) { await refreshMenu(); try { onProfileChange(await orderSync.getProfile()); } catch {} } throw error; }
     requestRef.current = null;
     setLastPlacedOrder(accepted);
     setCart([]);
@@ -331,8 +341,8 @@ export default function App() {
                       onSelect={setSelectedProduct}
                       onQuickAdd={handleQuickAdd}
                       inCartCount={inCartCounts[product.id] || 0}
-                      orderingDisabled={!canAddToCart}
-                      orderingUnavailableLabel={orderingUnavailableLabel}
+                      orderingDisabled={!canAddToCart || maxAdditional(cart, product.id) === 0}
+                      orderingUnavailableLabel={!canAddToCart ? orderingUnavailableLabel : 'Досягнуто ліміту'}
                     />
                   ))
                 )}
@@ -343,6 +353,8 @@ export default function App() {
           {view === 'checkout' && (
             <CheckoutView
               point={menu?.point}
+              profile={profile}
+              onProfileChange={onProfileChange}
               cart={cart}
               onUpdateQuantity={handleUpdateQuantity}
               onRemoveItem={handleRemoveItem}
@@ -390,6 +402,7 @@ export default function App() {
         {selectedProduct && (
           <ModifierModal
             modifiers={menu.modifiers}
+            maxQuantity={maxAdditional(cart, selectedProduct.id)}
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
             onAdd={handleAddCustomizedItem}

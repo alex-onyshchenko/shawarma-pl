@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { salesReport, reportPdf } from './reports.js';
+import { createCustomers } from './customers.js';
 import { dirname, join } from 'node:path';
 import { createMedia } from './media.js';
 import { telegramUser, trackingHash, ownsOrder, publicJson } from './telegram.js';
@@ -16,6 +17,7 @@ const store = createStore(process.env.DATABASE_PATH || fileURLToPath(new URL('./
 const media = createMedia(process.env.MEDIA_PATH || join(dirname(process.env.DATABASE_PATH || fileURLToPath(new URL('./data/shawarma.sqlite', import.meta.url))), 'media'));
 const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
 const notifications = createNotifications(store.db, { token: botToken });
+const customers = createCustomers(store.db, botToken);
 const notificationTimer = setInterval(() => notifications.tick().catch(() => console.error('Notification queue unavailable')), 1000);
 notificationTimer.unref();
 function availability() {
@@ -60,9 +62,10 @@ function broadcast(eventType, payload) {
       if (eventType === 'reset') store.db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE state='pending'").run();
       const order = eventType === 'new_order' ? payload : payload.order;
       if (order) {
+        if (order.status === 'no_show') customers.restrict(order.telegramUserId, order.id);
         if (eventType === 'new_order') notifications.enqueue(order, 'placed');
         else if (order.status === 'new' && order.acceptedAt) notifications.enqueue(order, 'confirmed');
-        else if (['cooking', 'ready', 'cancelled'].includes(order.status)) notifications.enqueue(order, order.status);
+        else if (['cooking', 'ready', 'cancelled', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
       }
       store.db.exec('COMMIT');
     } catch (error) { store.db.exec('ROLLBACK'); throw error; }
@@ -139,6 +142,22 @@ const server = http.createServer(async (req, res) => {
     json(res, 200, availability());
     return;
   }
+  if (pathname === '/api/telegram/contact' && req.method === 'POST') {
+    try { json(res, 200, customers.contact(await readJsonBody(req, 65536), req.headers['x-telegram-bot-api-secret-token'])); }
+    catch (error) { json(res, error.status || 400, { error: error.message }); }
+    return;
+  }
+  if (pathname === '/api/client/profile' && req.method === 'POST') {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const data = await readJsonBody(req);
+      const user = telegramUser(data.telegramInitData, botToken);
+      if (!user) { json(res, 401, { error: 'Відкрийте застосунок у Telegram', code: 'PHONE_REQUIRED' }); return; }
+      json(res, 200, customers.profile(user.id));
+    } catch (error) { json(res, error.status || 400, { error: error.message }); }
+    return;
+  }
+
   if (pathname === '/api/client/notifications' && req.method === 'POST') {
     try {
       const data = await readJsonBody(req);
@@ -150,7 +169,7 @@ const server = http.createServer(async (req, res) => {
       store.db.exec('BEGIN IMMEDIATE');
       try {
         store.set('orders', { orders, archivedOrders, nextOrderId });
-        if (['cooking', 'ready', 'cancelled'].includes(order.status)) notifications.enqueue(order, order.status);
+        if (['cooking', 'ready', 'cancelled', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
         else if (order.status === 'new') notifications.enqueue(order, order.acceptedAt ? 'confirmed' : 'placed');
         store.db.exec('COMMIT');
       } catch (error) { store.db.exec('ROLLBACK'); throw error; }
@@ -224,6 +243,7 @@ const server = http.createServer(async (req, res) => {
       if (data.paymentMethod && data.paymentMethod !== 'cash') { json(res, 409, { error: 'Наразі доступна лише оплата при отриманні' }); return; }
       if (data.napkins !== undefined && typeof data.napkins !== 'boolean') { json(res, 400, { error: 'Перевірте вибір серветок' }); return; }
       const quote = quoteOrder(store, data);
+      const phoneNumber = manual ? (typeof data.phoneNumber === 'string' ? data.phoneNumber.trim().slice(0, 50) : '') : customers.checkOrder(user, quote, data);
       const createdAt = Date.now();
       const timing = manual ? normalizeManualTiming(data, createdAt) : normalizeTiming(data, createdAt, hoursForPoint(store.activePoint(), createdAt));
       const newId = data.id ? String(data.id) : String(nextOrderId++);
@@ -254,7 +274,7 @@ const server = http.createServer(async (req, res) => {
         notification: 'Замовлення оформлено. Очікуємо підтвердження часу кухнею.',
         orderType: data.orderType || 'pickup',
         customerName: user?.first_name ? `${user.first_name} (Telegram)` : data.customerName || 'Telegram Замовник',
-        phoneNumber: typeof data.phoneNumber === 'string' ? data.phoneNumber.trim().slice(0, 50) : '',
+        phoneNumber,
         totalPrice: data.totalPrice || data.finalTotal || 0,
         deliveryAddress: data.deliveryAddress || null,
         selectedLocation: data.selectedLocation || null,
@@ -274,7 +294,7 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       console.error('[POST /api/orders error]', err.status || 400);
       res.writeHead(err.status || 400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      res.end(JSON.stringify({ error: err.message, code: err.code }));
     }
     return;
   }
@@ -324,6 +344,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const noShowMatch = pathname.match(/^\/api\/orders\/([^/]+)\/no-show$/);
+  if (noShowMatch && req.method === 'POST') {
+    try {
+      const id = decodeURIComponent(noShowMatch[1]);
+      const data = await readJsonBody(req);
+      if (data.confirmed !== true) { json(res, 400, { error: 'Підтвердьте неявку клієнта' }); return; }
+      const previous = archivedOrders.find(order => order.id === id);
+      if (previous?.status === 'no_show') { json(res, 200, { success: true, order: previous }); return; }
+      const index = orders.findIndex(order => order.id === id);
+      if (index === -1) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      const order = orders[index];
+      if (order.status !== 'ready' || order.paymentStatus !== 'cash_due') { json(res, 409, { error: 'Неявку можна позначити лише для готового неоплаченого замовлення' }); return; }
+      const noShow = { ...order, status: 'no_show', noShowAt: Date.now(), notification: 'Клієнт не прийшов за замовленням. Надалі потрібна передоплата.' };
+      orders.splice(index, 1); archivedOrders.unshift(noShow);
+      broadcast('order_status_updated', { id, status: 'no_show', order: noShow });
+      json(res, 200, { success: true, order: noShow });
+    } catch (error) { json(res, error.status || 400, { error: error.message }); }
+    return;
+  }
+
   // 4. PATCH /api/orders/:id/status - update order status
   const statusMatch = pathname.match(/^\/api\/orders\/([^/]+)\/status$/);
   if (statusMatch && req.method === 'PATCH') {
@@ -340,7 +380,7 @@ const server = http.createServer(async (req, res) => {
         const archIndex = archivedOrders.findIndex(o => o.id === orderId);
         if (archIndex > -1) {
           const archived = archivedOrders[archIndex];
-          if (archived.status === 'cancelled') { json(res, 409, { error: 'Скасоване замовлення не можна відновити' }); return; }
+          if (['cancelled', 'no_show'].includes(archived.status)) { json(res, 409, { error: 'Закрите замовлення не можна відновити' }); return; }
           const restored = { ...archived, status: 'ready', timingMode: archived.timingMode || 'asap', acceptedAt: archived.acceptedAt || Date.now(), confirmedReadyAt: archived.confirmedReadyAt || Date.now() };
           archivedOrders.splice(archIndex, 1);
           orders.push(restored);
@@ -429,7 +469,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (pathname === '/api/analytics' && req.method === 'GET') {
-    const allOrders = [...orders, ...archivedOrders].filter(order => order.status !== 'cancelled');
+    const allOrders = [...orders, ...archivedOrders].filter(order => !['cancelled', 'no_show'].includes(order.status));
     const now = Date.now();
     const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
     const startOfWeek = new Date(now - 7 * 86400000);
@@ -459,7 +499,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Compute revenue per product from archived orders only (have full price context)
     const revenuePerProduct = {};
-    for (const o of archivedOrders.filter(order => order.status !== 'cancelled')) {
+    for (const o of archivedOrders.filter(order => !['cancelled', 'no_show'].includes(order.status))) {
       // approximate: distribute totalPrice evenly among items weighted by qty
       const totalQty = (o.items || []).reduce((s, i) => s + (i.qty || 1), 0);
       for (const item of (o.items || [])) {

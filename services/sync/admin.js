@@ -57,7 +57,7 @@ export function createAdminHandler({ store, readJsonBody, adminToken, onChange, 
         send(res, 200, {
           points, ingredients: store.ingredients(), catalog: store.products(), menus: Object.fromEntries(points.map(point => [point.id, store.menu(point.id)])),
           modifiers: store.get('modifiers'), audit: store.audit(), orders: orders.sort((a,b) => b.createdAt-a.createdAt).slice(0, 50),
-          stats: { activeOrders: orders.filter(order => order.status !== 'archived').length, totalOrders: orders.length },
+          stats: { activeOrders: orders.filter(order => !['archived', 'cancelled', 'no_show'].includes(order.status)).length, totalOrders: orders.length },
         }); return;
       }
       if (url.pathname === '/api/admin/images' && req.method === 'POST') {

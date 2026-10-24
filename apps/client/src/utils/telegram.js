@@ -29,6 +29,11 @@ export const tg = {
     return this.isAvailable ? this.webApp.initDataUnsafe?.user || null : null;
   },
 
+  requestContact() {
+    if (!this.isAvailable || !this.webApp.requestContact || (this.webApp.isVersionAtLeast && !this.webApp.isVersionAtLeast('6.9'))) return Promise.reject(new Error('Оновіть Telegram, щоб поділитися номером телефону.'));
+    return new Promise((resolve, reject) => { try { this.webApp.requestContact(shared => resolve(Boolean(shared))); } catch { reject(new Error('Не вдалося запросити номер у Telegram')); } });
+  },
+
   requestNotifications() {
     if (!this.isAvailable) return Promise.resolve(false);
     if (this.webApp.initDataUnsafe?.user?.allows_write_to_pm) return Promise.resolve(true);

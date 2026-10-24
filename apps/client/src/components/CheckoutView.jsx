@@ -10,6 +10,7 @@ import {
   CreditCard,
   Banknote
 } from 'lucide-react';
+import { LIMITS, maxAdditional } from '../utils/orderPolicy';
 import { tg } from '../utils/telegram';
 import ProductImage from './ProductImage';
 import { orderSync } from '../utils/orderSync';
@@ -18,6 +19,8 @@ import { getSlots, formatTime, normalizeTiming, ceilQuarter, MINUTE } from '../u
 export default function CheckoutView({
   cart,
   point,
+  profile,
+  onProfileChange,
   onUpdateQuantity,
   onRemoveItem,
   onBackToMenu,
@@ -26,7 +29,7 @@ export default function CheckoutView({
 }) {
   const deliveryType = 'pickup';
   const selectedLocation = point ? { id: point.id, name: point.address, metro: point.metro } : null;
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(profile?.phoneNumber || '');
   const [napkins, setNapkins] = useState(true);
   const [wantNotifications, setWantNotifications] = useState(true);
   const paymentMethod = 'cash';
@@ -40,6 +43,8 @@ export default function CheckoutView({
   const submitting = useRef(false);
 
   useEffect(() => {
+    let active = true;
+    orderSync.getProfile().then(value => { if (active) onProfileChange?.(value); }).catch(() => {});
     const unsubscribe = orderSync.subscribe({
       onInit: data => setAvailability(data.availability),
       onAvailability: setAvailability,
@@ -48,13 +53,14 @@ export default function CheckoutView({
     const timer = setInterval(refreshClock, 15000);
     window.addEventListener('focus', refreshClock);
     document.addEventListener('visibilitychange', refreshClock);
-    return () => { unsubscribe(); clearInterval(timer); window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); };
+    return () => { active = false; unsubscribe(); clearInterval(timer); window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); };
   }, []);
 
   const slots = availability ? getSlots(clock, availability) : [];
   const selectedSlot = requestedReadyAt || String(slots[0] || '');
   const hasUnavailableItems = cart.some(item => item.unavailableReason);
-  const canSubmit = !hasUnavailableItems && availability?.acceptingOrders && (timingMode === 'scheduled' ? slots.length > 0 : availability.asapAvailable);
+  const quantitiesValid = cart.every(item => cart.filter(row => row.product.id === item.product.id).reduce((sum, row) => sum + row.quantity, 0) <= LIMITS.perProduct) && cart.reduce((sum, item) => sum + item.quantity, 0) <= 10;
+  const canSubmit = quantitiesValid && !hasUnavailableItems && availability?.acceptingOrders && (timingMode === 'scheduled' ? slots.length > 0 : availability.asapAvailable);
 
   // Subtotal calculation
   const subtotal = Math.round(cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0) * 100) / 100;
@@ -63,6 +69,11 @@ export default function CheckoutView({
   const deliveryFee = 0;
   const finalTotal = Math.max(0, Math.round((subtotal - discount) * 100) / 100);
 
+  const prepaymentRequired = profile?.prepaymentOnly || finalTotal > LIMITS.cashMax;
+  const prepaymentMessage = profile?.prepaymentOnly
+    ? 'Після неявки замовлення доступні лише за передоплатою. Онлайн-оплату ще не підключено, тому оформлення тимчасово недоступне.'
+    : 'Для замовлень понад 500 грн потрібна повна передоплата. Онлайн-оплату ще не підключено. Зменште кошик до 500 грн або замовте в закладі.';
+
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
     if (submitting.current) return;
@@ -70,6 +81,10 @@ export default function CheckoutView({
     submitting.current = true;
     setIsSubmitting(true);
     try {
+      const currentProfile = await orderSync.getProfile();
+      onProfileChange?.(currentProfile);
+      if (currentProfile.prepaymentOnly || finalTotal > LIMITS.cashMax) throw new Error(currentProfile.prepaymentOnly ? 'Для вас доступні лише замовлення з передоплатою. Онлайн-оплату ще не підключено.' : prepaymentMessage);
+      if (!/^\+?[\d\s().-]{7,30}$/.test(phoneNumber.trim())) throw new Error('Вкажіть коректний номер для дзвінків');
       const notificationsEnabled = wantNotifications && availability?.telegramNotifications && tg.isAvailable ? await tg.requestNotifications() : false;
       const current = await orderSync.getAvailability();
       setAvailability(current);
@@ -215,7 +230,7 @@ export default function CheckoutView({
                     tg.haptic.impact('light');
                     onUpdateQuantity(item.id, -1);
                   }}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 disabled:opacity-30"
                 >
                   <Minus size={14} />
                 </button>
@@ -223,11 +238,13 @@ export default function CheckoutView({
                   {item.quantity}
                 </span>
                 <button
+                  aria-label={`Збільшити кількість ${item.product.name}`}
+                  disabled={maxAdditional(cart, item.product.id) === 0 || availability?.acceptingOrders !== true}
                   onClick={() => {
                     tg.haptic.impact('light');
                     onUpdateQuantity(item.id, 1);
                   }}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 disabled:opacity-30"
                 >
                   <Plus size={14} />
                 </button>
@@ -255,11 +272,13 @@ export default function CheckoutView({
         {/* Contact Phone */}
         <div className="pt-2 border-t border-zinc-800/60">
           <label htmlFor="contact-phone" className="text-xs text-zinc-400 block mb-1 font-medium">
-            Номер телефону (необов’язково):
+            Номер для дзвінків:
           </label>
           <input
             id="contact-phone"
             type="tel"
+            required
+            maxLength={30}
             placeholder="+380…"
             autoComplete="tel"
             value={phoneNumber}
@@ -310,10 +329,10 @@ export default function CheckoutView({
           <span>Спосіб оплати</span>
         </h3>
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" aria-pressed="true" className="p-3 rounded-xl border border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500 flex flex-col items-center gap-1">
+          {!prepaymentRequired && <button type="button" aria-pressed="true" className="p-3 rounded-xl border border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500 flex flex-col items-center gap-1">
             <Banknote size={18} />
             <span className="text-xs font-semibold">При отриманні</span>
-          </button>
+          </button>}
           <button type="button" disabled className="p-3 rounded-xl border border-zinc-800 bg-zinc-800/40 text-zinc-500 opacity-50 cursor-not-allowed flex flex-col items-center gap-1">
             <CreditCard size={18} />
             <span className="text-xs font-semibold">Картка онлайн</span>
@@ -344,7 +363,8 @@ export default function CheckoutView({
         </div>
       </div>
 
-      <p className="text-xs text-zinc-400">Оплата при отриманні замовлення.</p>
+      <p className="text-xs text-zinc-400">До 500 грн включно — оплата при отриманні. Ліміт: 5 одиниць однієї позиції та 10 товарів загалом.</p>
+      {prepaymentRequired && <p role="alert" className="rounded-xl border border-amber-700/50 bg-amber-500/10 p-4 text-sm leading-6 text-amber-200">{prepaymentMessage}</p>}
       {tg.isAvailable && availability?.telegramNotifications && <label className="flex gap-3 rounded-xl border border-zinc-800 p-4 text-sm">
         <input type="checkbox" checked={wantNotifications} onChange={event => setWantNotifications(event.target.checked)} className="accent-orange-500" />
         <span>Повідомляти про готовність у Telegram<span className="mt-1 block text-xs text-zinc-400">Telegram запитає дозвіл, якщо його ще немає. Без дозволу бот не зможе надсилати сповіщення.</span></span>
@@ -355,7 +375,7 @@ export default function CheckoutView({
       <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto safe-bottom p-4 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800/80 z-30">
         <button
           onClick={handleSubmitOrder}
-          disabled={isSubmitting || !canSubmit}
+          disabled={isSubmitting || !canSubmit || prepaymentRequired}
           className="disabled:opacity-50 disabled:cursor-not-allowed w-full bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold py-4 px-6 rounded-2xl shadow-xl shadow-orange-500/25 flex items-center justify-between transition-transform active:scale-[0.98]"
         >
           <div className="flex items-center gap-2">

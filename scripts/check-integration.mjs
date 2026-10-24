@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { initData, contact, testBotToken } from '../services/sync/test/fixtures/telegram.js';
+import { webhookSecret } from '../services/sync/customers.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer as createHttpServer } from 'node:http';
@@ -8,7 +10,7 @@ import { createServer } from '../apps/client/node_modules/vite/dist/node/index.j
 const root = fileURLToPath(new URL('..', import.meta.url));
 const child = spawn(process.execPath, ['services/sync/server.js'], {
   cwd: root,
-  env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', ADMIN_TOKEN: 'integration-admin-key' },
+  env: { ...process.env, TELEGRAM_BOT_TOKEN: testBotToken, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', ADMIN_TOKEN: 'integration-admin-key' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 const servers = [];
@@ -41,6 +43,7 @@ try {
     child.once('exit', code => reject(new Error(`Sync exited (${code}): ${output}`)));
     child.stderr.on('data', data => { output += data; });
   });
+  assert.equal((await fetch(api + '/api/telegram/contact', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(testBotToken) }, body: JSON.stringify(contact()) })).status, 200);
   process.env.SYNC_API_TARGET = api;
   const bases = {};
   for (const app of ['client', 'kitchen', 'analytics', 'admin']) {
@@ -110,7 +113,7 @@ try {
   const kitchenEvent = await subscribe(bases.kitchen);
   const clientEvent = await subscribe(bases.client);
   const order = {
-    id: 'cross-service-test', totalPrice: 150,
+    id: 'cross-service-test', totalPrice: 150, telegramInitData: initData(),
     items: [{ productId: 'shawarma-classic', sizeId: 'small', name: 'Класична шаурма', qty: 1, added: [], removed: [] }],
   };
   const created = await fetch(`${bases.client}/api/orders`, {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock,
+  Phone,
   Coffee,
   LockKeyholeOpen,
   LockKeyhole,
@@ -105,7 +106,7 @@ export default function KitchenDisplayApp() {
         setTimeout(() => setNewOrderAlert(null), 4000);
       },
       onStatusUpdate: ({ id, status, order }) => {
-        if (['archived', 'cancelled'].includes(status)) {
+        if (['archived', 'cancelled', 'no_show'].includes(status)) {
           setOrders(prev => prev.filter(o => o.id !== id));
         } else {
           setOrders(prev => {
@@ -299,6 +300,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
@@ -338,6 +340,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
@@ -377,6 +380,7 @@ export default function KitchenDisplayApp() {
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
                   onAccept={acceptOrder}
+                  onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
                 />
@@ -392,7 +396,7 @@ export default function KitchenDisplayApp() {
 }
 
 // Order cards use a compact type scale with emphasis on ID, deadline and dishes.
-function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, busy }) {
+function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, onNoShow, busy }) {
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
   const isDelayed = remaining !== null && remaining < 0 && order.status !== 'ready';
@@ -421,6 +425,7 @@ function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, busy }) 
         {order.source === 'kitchen' && <span className="text-zinc-400">Створено вручну</span>}
         <span className="ml-auto text-xs text-zinc-500 tabular-nums">{order.time}</span>
       </div>
+      {order.phoneNumber && <a href={`tel:${order.phoneNumber.replace(/[^+0-9]/g, '')}`} className="mt-2 flex w-fit items-center gap-1.5 text-xs text-zinc-300"><Phone size={12}/>{order.phoneNumber}</a>}
     </header>
 
     {readyAt && <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
@@ -460,6 +465,7 @@ function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, busy }) 
         <p className="mb-2 text-xs text-zinc-400">Підтвердьте час видачі:</p>
         <div className="grid grid-cols-2 gap-2">{[0, 5, 10, 15].map(delay => <button key={delay} disabled={busy} onClick={() => onAccept(order.id, delay)} className={`min-h-[60px] rounded-xl px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${delay === 0 ? 'bg-emerald-700 hover:bg-emerald-600' : delay <= 10 ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-700 hover:bg-red-600'}`}><span className="block opacity-90">{delay === 0 ? 'Без змін' : `+${delay} хв`}</span><span className="mt-0.5 block text-lg font-semibold tabular-nums">{formatTime(order.baselineReadyAt + delay * MINUTE, order.timeZone)}</span></button>)}</div>
       </div> : <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>}
+      {order.status === 'ready' && order.paymentStatus === 'cash_due' && <button type="button" disabled={busy} onClick={() => onNoShow(order.id)} className="mt-3 min-h-[40px] w-full rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Клієнт не прийшов</button>}
       {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} className="mt-3 flex min-h-[40px] w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50"><X size={14}/>Скасувати замовлення</button>}
     </div>
   </article>;

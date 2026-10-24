@@ -1,3 +1,5 @@
+import { initData, contact, testBotToken } from './fixtures/telegram.js';
+import { webhookSecret } from '../customers.js';
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -11,7 +13,7 @@ const testTimeZone = hourOffset === 0 ? 'Etc/GMT' : `Etc/GMT${hourOffset > 0 ? '
 before(async () => {
   child = spawn(process.execPath, ['server.js'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', OPEN_HOUR: 'invalid', CLOSE_HOUR: 'invalid', STORE_TIMEZONE: 'Invalid/Zone', ADMIN_TOKEN: 'test-admin-key' },
+    env: { ...process.env, TELEGRAM_BOT_TOKEN: testBotToken, HOST: '127.0.0.1', PORT: '0', DATABASE_PATH: ':memory:', OPEN_HOUR: 'invalid', CLOSE_HOUR: 'invalid', STORE_TIMEZONE: 'Invalid/Zone', ADMIN_TOKEN: 'test-admin-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   base = await new Promise((resolve, reject) => {
@@ -32,6 +34,7 @@ before(async () => {
       reject(new Error(`Server exited (${code}): ${output}`));
     });
   });
+  assert.equal((await fetch(base + '/api/telegram/contact', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(testBotToken) }, body: JSON.stringify(contact()) })).status, 200);
   // Test hours are configured through the same database-backed API as Admin.
   const initial = await (await fetch(`${base}/api/availability`)).json();
   assert.equal(initial.timeZone, 'Europe/Kyiv');
@@ -97,6 +100,7 @@ test('standalone service exposes health, REST and live SSE without either fronte
 
     const order = {
       id: 'service-contract-test',
+      telegramInitData: initData(),
       customerName: 'Integration test',
       totalPrice: 150,
       items: [{ productId: 'shawarma-classic', sizeId: 'small', name: 'Класична шаурма', qty: 1, added: [], removed: [] }],
@@ -142,7 +146,7 @@ test('standalone service exposes health, REST and live SSE without either fronte
 async function request(path, method = 'GET', body, token) {
   const response = await fetch(base + path, {
     method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? JSON.stringify(path === '/api/orders' && method === 'POST' ? { telegramInitData: initData(), ...body } : body) : undefined,
   });
   return { status: response.status, data: await response.json() };
 }
@@ -294,7 +298,7 @@ let adminCookie = '';
 async function admin(path, method = 'GET', body, extra = {}) {
   const response = await fetch(base + '/api/admin' + path, {
     method, headers: { 'Content-Type': 'application/json', Cookie: adminCookie, ...extra },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? JSON.stringify(path === '/api/orders' && method === 'POST' ? { telegramInitData: initData(), ...body } : body) : undefined,
   });
   return { status: response.status, data: await response.json(), cookie: response.headers.get('set-cookie') };
 }
@@ -354,14 +358,14 @@ test('menu changes affect new quotes, reject stale totals, preserve old order sn
   }
 });
 
-test('pickup checkout uses admin address, optional phone, napkins and receipt payment only', async () => {
+test('pickup checkout uses admin address, verified default phone, napkins and receipt payment only', async () => {
   const menu = (await request('/api/menu')).data;
   assert.equal(menu.point.address, 'м. Полтава, вул. Соборності, 46');
   assert.equal(menu.point.metro, '');
   assert.equal(menu.point.pickupDiscountPercent, 0);
   assert.equal(menu.point.deliveryEnabled, false);
   assert.equal(menu.products.find(product => product.id === 'shawarma-signature').tag, '🔥 Найпопулярніша');
-  const payload = { items: [item], paymentMethod: 'cash', phoneNumber: '', napkins: false, expectedTotal: 190 };
+  const payload = { items: [item], paymentMethod: 'cash', napkins: false, expectedTotal: 190 };
   const originalAddress = menu.point.address;
   try {
     await admin('/points/demo', 'PATCH', { address: 'Updated admin pickup address' });
@@ -369,7 +373,7 @@ test('pickup checkout uses admin address, optional phone, napkins and receipt pa
     const result = await request('/api/orders', 'POST', { ...payload, selectedLocation: { name: 'Forged client address' } });
     assert.equal(result.status, 201);
     assert.equal(result.data.order.selectedLocation.name, 'Updated admin pickup address');
-    assert.equal(result.data.order.phoneNumber, '');
+    assert.equal(result.data.order.phoneNumber, '+380501234567');
     assert.equal(result.data.order.napkins, false);
     assert.equal(result.data.order.cutlery, false);
     assert.equal(result.data.order.discount, 0);
@@ -426,6 +430,39 @@ test('sales report exposes full issued-order statement and downloadable PDF; inv
   for (const query of ['period=22', 'commission=-1', 'commission=100.01', 'format=html']) {
     assert.equal((await request('/api/analytics/report?' + query)).status, 400);
   }
+});
+
+test('client phone gating, quantity limits, cash boundary and permanent no-show restriction are enforced by API', async () => {
+  const anonymous = await request('/api/orders', 'POST', { items: [item], telegramInitData: '' });
+  assert.equal(anonymous.status, 401);
+  const telegramInitData = initData(testBotToken, 22222);
+  assert.equal((await request('/api/client/profile', 'POST', { telegramInitData })).data.phoneVerified, false);
+  assert.equal((await request('/api/orders', 'POST', { telegramInitData, items: [item], phoneNumber: '+380671112233' })).status, 403);
+  const shared = await fetch(base + '/api/telegram/contact', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(testBotToken) }, body: JSON.stringify(contact(22222)) });
+  assert.equal(shared.status, 200);
+  const create = items => request('/api/orders', 'POST', { telegramInitData, items });
+  assert.equal((await create([{ productId: '12', qty: 6 }])).data.code, 'ORDER_LIMIT');
+  assert.equal((await create([{ productId: '12', qty: 5 }, { productId: '13', qty: 5 }, { productId: '14', qty: 1 }])).data.code, 'ORDER_LIMIT');
+  assert.equal((await create([{ ...item, qty: 3 }, { ...item, sizeId: 'medium', qty: 3 }])).data.code, 'ORDER_LIMIT');
+  assert.equal((await create([{ ...item, sizeId: 'large', qty: 2 }])).status, 201); // exactly 500
+  assert.equal((await create([{ productId: 'shawarma-signature', sizeId: 'large', qty: 2 }])).data.code, 'PREPAYMENT_REQUIRED');
+  const created = await request('/api/orders', 'POST', { telegramInitData, items: [item], phoneNumber: '+380671112233' });
+  assert.equal(created.status, 201);
+  assert.equal(created.data.order.phoneNumber, '+380671112233');
+  assert.equal((await request('/api/client/profile', 'POST', { telegramInitData })).data.phoneNumber, '+380501234567');
+  const path = `/api/orders/${created.data.order.id}`;
+  assert.equal((await request(path + '/no-show', 'POST', { confirmed: true })).status, 409);
+  await request(path + '/accept', 'POST', { delayMinutes: 0 });
+  await request(path + '/status', 'PATCH', { status: 'cooking', confirmEarly: true });
+  await request(path + '/status', 'PATCH', { status: 'ready', confirmEarly: true });
+  assert.equal((await request(path + '/no-show', 'POST', { confirmed: false })).status, 400);
+  assert.equal((await request(path + '/no-show', 'POST', { confirmed: true })).data.order.status, 'no_show');
+  assert.equal((await request(path + '/no-show', 'POST', { confirmed: true })).status, 200);
+  assert.equal((await request(path + '/status', 'PATCH', { status: 'ready' })).status, 409);
+  assert.equal((await request('/api/client/profile', 'POST', { telegramInitData })).data.prepaymentOnly, true);
+  assert.equal((await create([{ productId: '12', qty: 1 }])).data.code, 'PREPAYMENT_REQUIRED');
+  assert.equal((await request('/api/menu')).status, 200);
+  assert.ok(!(await request('/api/analytics/report')).data.sales.some(sale => sale.id === created.data.order.id));
 });
 
 test('clear removes active and archived orders instead of generating demo history', async () => {

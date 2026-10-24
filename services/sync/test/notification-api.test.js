@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { webhookSecret } from '../customers.js';
+import { contact } from './fixtures/telegram.js';
 import { createHmac } from 'node:crypto';
 
 const token = 'notification-api-test-token';
@@ -33,6 +35,7 @@ test('API queues actual order events, validates identity and never exposes Teleg
       const res = await fetch(base + path, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: body ? JSON.stringify(body) : undefined });
       return { status: res.status, body: await res.json(), cookie: res.headers.get('set-cookie')?.split(';')[0] };
     };
+    assert.equal((await fetch(base + '/api/telegram/contact', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(token) }, body: JSON.stringify(contact()) })).status, 200);
     const login = await call('/api/admin/session', 'POST', { password: 'test-admin' });
     const offset = 12 - new Date().getUTCHours();
     const zone = offset === 0 ? 'Etc/GMT' : `Etc/GMT${offset > 0 ? '-' : '+'}${Math.abs(offset)}`;
@@ -88,6 +91,10 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(sent().filter(message => message.text.includes('скасовано кухнею')).length, 1);
     assert.match(sent().find(message => message.text.includes('скасовано кухнею')).text, /Закінчилася курка/);
     assert.equal((await call('/api/analytics')).body.summary.totalOrders, 2);
+    const noShow = await call('/api/orders/' + id + '/no-show', 'POST', { confirmed: true });
+    assert.equal(noShow.status, 200);
+    await waitFor(() => sent().some(message => message.text.includes('позначене як невикуплене')));
+    assert.equal(sent().filter(message => message.text.includes('позначене як невикуплене')).length, 1);
     assert.ok(!output.includes(token));
   } finally {
     if (child.exitCode === null && child.signalCode === null) { const ended = once(child, 'exit'); child.kill(); await ended; }

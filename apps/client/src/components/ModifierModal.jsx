@@ -12,7 +12,7 @@ function IngredientPhoto({ ingredient }) {
   </div>;
 }
 
-export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel, previewOnly = false }) {
+export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel, previewOnly = false, maxQuantity = 5 }) {
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || null);
   const [addedMods, setAddedMods] = useState([]);
   const [removedMods, setRemovedMods] = useState([]);
@@ -58,7 +58,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
   };
 
   const handleConfirm = () => {
-    if (orderingDisabled || previewOnly) return;
+    if (orderingDisabled || previewOnly || quantity > maxQuantity) return;
     tg.haptic.impact('medium');
     onAdd({
       product,
@@ -338,11 +338,13 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
               </span>
               <button
                 type="button"
+                aria-label="Збільшити кількість"
+                disabled={quantity >= maxQuantity}
                 onClick={() => {
                   tg.haptic.impact('light');
-                  setQuantity(quantity + 1);
+                  if (quantity < maxQuantity) setQuantity(quantity + 1);
                 }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-300 hover:text-white active:scale-95 disabled:opacity-30"
               >
                 <Plus size={15} />
               </button>
@@ -358,7 +360,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
 
           <button
             onClick={handleConfirm}
-            disabled={orderingDisabled}
+            disabled={orderingDisabled || quantity > maxQuantity}
             className="w-full bg-orange-500 hover:bg-orange-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-2xl text-base shadow-xl shadow-orange-500/25 flex items-center justify-between transition-all"
           >
             <span>{orderingDisabled ? orderingUnavailableLabel : 'Додати в кошик'}</span>

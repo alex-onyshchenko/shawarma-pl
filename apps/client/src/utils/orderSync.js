@@ -18,6 +18,7 @@ async function request(path, { method = 'GET', body, token } = {}) {
 }
 
 export const orderSync = {
+  getProfile: () => request('/api/client/profile', { method: 'POST', body: { telegramInitData: window.Telegram?.WebApp?.initData || '' } }),
   getMenu: () => request('/api/menu'),
   getAvailability: () => request('/api/availability'),
   async createOrder(order) { return { ...(await request('/api/orders', { method: 'POST', body: order })).order, trackingToken: order.trackingToken }; },

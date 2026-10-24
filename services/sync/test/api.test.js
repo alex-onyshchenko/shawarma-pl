@@ -488,9 +488,9 @@ test('custom ready time accepts arbitrary future minutes, deduplicates retries a
   for (const value of [0, '18:30', readyAt + 1, null]) assert.equal((await request(path, 'POST', { readyAt: value })).status, 400);
   assert.equal((await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'cooking', confirmEarly: true })).status, 200);
   const cookingChange = await request(path, 'POST', { readyAt: readyAt + 60000, expectedReadyAt: readyAt });
-  assert.equal(cookingChange.status, 200);
-  assert.equal(cookingChange.data.order.timeRevision, 2);
-  assert.equal(cookingChange.data.order.status, 'cooking');
+  assert.equal(cookingChange.status, 409);
+  assert.equal((await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'ready', confirmEarly: true })).status, 200);
+  assert.equal((await request(path, 'POST', { readyAt: readyAt + 60000 })).status, 409);
 });
 
 test('starting preparation implicitly confirms the displayed deadline', async () => {
@@ -536,5 +536,31 @@ test('cancellation requires the new column; cooking and ready can return one col
     const snapshot = (await request('/api/orders')).data;
     assert.ok(!snapshot.orders.some(order => order.id === id));
     assert.equal(snapshot.archivedOrders.filter(order => order.id === id && order.status === 'cancelled').length, 1);
+  }
+});
+
+
+test('new-order time edits respect the current database closing time and dated closures', async () => {
+  const login = await admin('/session', 'POST', { password: 'test-admin-key' });
+  adminCookie = login.cookie.split(';')[0];
+  const point = (await request('/api/menu')).data.point;
+  const created = await request('/api/orders', 'POST', { items: [item] });
+  assert.equal(created.status, 201);
+  const path = `/api/orders/${created.data.order.id}/ready-time`;
+  const now = Date.now();
+  const local = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: point.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now).map(part => [part.type, part.value]));
+  const closingMinute = Number(local.hour) * 60 + Number(local.minute) + 4;
+  const close = `${String(Math.floor(closingMinute / 60)).padStart(2,'0')}:${String(closingMinute % 60).padStart(2,'0')}`;
+  const valid = (Math.floor(now / 60000) + 2) * 60000;
+  try {
+    assert.equal((await admin('/points/demo', 'PATCH', { weeklyHours: point.weeklyHours.map(() => ({ closed: false, open: '00:00', close })) })).status, 200);
+    assert.equal((await request(path, 'POST', { readyAt: valid })).status, 200);
+    assert.equal((await request(path, 'POST', { readyAt: valid + 5 * 60000 })).status, 400);
+    assert.equal((await request(path, 'POST', { readyAt: valid + 24 * 60 * 60000 })).status, 400);
+    const date = `${local.year}-${local.month}-${local.day}`;
+    await admin('/points/demo', 'PATCH', { exceptions: [{ date, closed: true, open: '00:00', close }] });
+    assert.equal((await request(path, 'POST', { readyAt: valid + 60000 })).status, 400);
+  } finally {
+    await admin('/points/demo', 'PATCH', { weeklyHours: point.weeklyHours, exceptions: point.exceptions });
   }
 });

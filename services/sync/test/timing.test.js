@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeTiming, getSlots, earlyStart, asapAvailable, MINUTE, getManualSlots, normalizeManualTiming } from '../timing.js';
+import { normalizeTiming, getSlots, earlyStart, asapAvailable, MINUTE, getManualSlots, normalizeManualTiming, getReadyTimeSlots } from '../timing.js';
 
 const at = (time, date = '2026-10-22') => Date.parse(`${date}T${time}:00+03:00`);
 
@@ -72,4 +72,17 @@ test('manual slots ignore business hours and include the next day within 24 hour
   assert.equal(normalizeManualTiming({ requestedReadyAt: at('23:45') }, now).baselineReadyAt, slots[0]);
   assert.throws(() => normalizeManualTiming({ requestedReadyAt: at('00:15', '2026-10-24') }, now));
   for (const requestedReadyAt of [null, NaN, Infinity, '23:55', now]) assert.throws(() => normalizeManualTiming({ requestedReadyAt }, now));
+});
+
+
+test('kitchen edit times include each remaining minute, closing boundary, and never tomorrow', async () => {
+  const { getReadyTimeSlots: frontendSlots } = await import('../../../apps/kitchen/src/utils/timing.js');
+  const hours = { timeZone: 'Europe/Kyiv', closeMinute: 22 * 60, closed: false };
+  for (const now of [at('14:22'), at('21:57') + 30000, at('22:00'), at('23:59'), Date.parse('2026-10-25T01:40:00Z')]) {
+    assert.deepEqual(frontendSlots(now, hours), getReadyTimeSlots(now, hours));
+  }
+  assert.deepEqual(getReadyTimeSlots(at('21:57') + 30000, hours), [at('21:58'), at('21:59'), at('22:00')]);
+  assert.deepEqual(getReadyTimeSlots(at('22:00'), hours), []);
+  assert.deepEqual(getReadyTimeSlots(at('14:22'), { ...hours, closed: true }), []);
+  assert.deepEqual(getReadyTimeSlots(at('23:58'), { ...hours, closeMinute: 1440 }), [at('23:59')]);
 });

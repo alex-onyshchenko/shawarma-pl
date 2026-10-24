@@ -8,7 +8,7 @@ import { createNotifications } from './notifications.js';
 import { fileURLToPath } from 'node:url';
 import { createStore, hoursForPoint, quoteOrder, DEMO_POINT_ID } from './store.js';
 import { createAdminHandler } from './admin.js';
-import { MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming } from './timing.js';
+import { MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming, getReadyTimeSlots } from './timing.js';
 
 const PORT = Number(process.env.PORT || 3002);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -328,6 +328,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const order = orders.find(item => item.id === decodeURIComponent(readyTimeMatch[1]));
       if (!order) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      if (order.status !== 'new') { json(res, 409, { error: 'Час можна змінити лише в колонці «Нові»' }); return; }
       const { readyAt, expectedReadyAt } = await readJsonBody(req);
       const previous = order.confirmedReadyAt || order.baselineReadyAt;
       if (expectedReadyAt !== undefined && expectedReadyAt !== previous && readyAt !== previous) { json(res, 409, { error: 'Час уже змінився. Перевірте актуальний час і повторіть дію' }); return; }
@@ -335,6 +336,9 @@ const server = http.createServer(async (req, res) => {
       if (readyAt === previous) { json(res, 200, { success: true, order }); return; }
       if (typeof readyAt !== 'number' || !Number.isFinite(readyAt) || !Number.isFinite(new Date(readyAt).getTime()) || readyAt % MINUTE !== 0 || readyAt <= Date.now()) {
         json(res, 400, { error: 'Оберіть майбутні дату та час із точністю до хвилини' }); return;
+      }
+      if (!getReadyTimeSlots(Date.now(), hoursForPoint(store.point(order.pointId || DEMO_POINT_ID), Date.now())).includes(readyAt)) {
+        json(res, 400, { error: 'Оберіть час сьогодні до завершення робочого дня закладу' }); return;
       }
       const firstConfirmation = !order.acceptedAt;
       order.confirmedReadyAt = readyAt;

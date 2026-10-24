@@ -53,3 +53,20 @@ export function normalizeTiming({ timingMode = 'asap', requestedReadyAt }, now, 
 export function earlyStart(order, now) {
   return order.timingMode === 'scheduled' && order.confirmedReadyAt - now > 20 * MINUTE;
 }
+
+// Every remaining whole minute today, through the cafe's scheduled closing time.
+export function getReadyTimeSlots(now, hours) {
+  if (!hours || hours.closed) return [];
+  const zone = hours.timeZone || DEFAULT_HOURS.timeZone;
+  const today = localParts(now, zone).day;
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const close = hours.closeMinute ?? hours.closeHour * 60;
+  const slots = [];
+  for (let slot = (Math.floor(now / MINUTE) + 1) * MINUTE; slot <= now + 26 * 60 * MINUTE; slot += MINUTE) {
+    const parts = Object.fromEntries(formatter.formatToParts(slot).map(part => [part.type, part.value]));
+    const day = `${parts.year}-${parts.month}-${parts.day}`;
+    if (day !== today || Number(parts.hour) * 60 + Number(parts.minute) > close) break;
+    slots.push(slot);
+  }
+  return slots;
+}

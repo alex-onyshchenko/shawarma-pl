@@ -68,6 +68,8 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(declined.body.order.notificationsEnabled, false);
     assert.equal((await call('/api/client/notifications', 'POST', { id: declined.body.order.id, telegramInitData: body.telegramInitData })).status, 200);
     await waitFor(() => sent().length === 5);
+    assert.equal((await call('/api/orders/' + id + '/status', 'PATCH', { status: 'cooking' })).status, 200);
+    assert.equal((await call('/api/orders/' + id + '/status', 'PATCH', { status: 'new' })).status, 200);
     const timePath = '/api/orders/' + id + '/ready-time';
     const firstTime = placed.body.order.baselineReadyAt + 60000;
     const secondTime = firstTime + 60000;
@@ -99,6 +101,8 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(snapshot.archivedOrders.filter(order => order.id === cancelled.body.order.id).length, 1);
     assert.equal((await call(cancelPath + '/status', 'PATCH', { status: 'ready' })).status, 409);
     assert.equal((await call('/api/analytics')).body.summary.totalOrders, 2);
+    assert.equal((await call('/api/orders/' + id + '/status', 'PATCH', { status: 'cooking' })).status, 200);
+    assert.equal((await call('/api/orders/' + id + '/status', 'PATCH', { status: 'ready' })).status, 200);
     const noShow = await call('/api/orders/' + id + '/no-show', 'POST', { confirmed: true });
     assert.equal(noShow.status, 200);
     await waitFor(() => sent().some(message => message.text.includes('позначене як невикуплене')));

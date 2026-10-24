@@ -28,8 +28,8 @@ export default function OrderSuccessModal({ order, onReset, telegramNotification
   };
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   return (
-    <div className="p-4 pb-12 max-w-2xl mx-auto animate-fade-in">
-      <div className="bg-zinc-900 rounded-3xl p-5 border border-zinc-800 space-y-5 text-center">
+    <div className="w-full min-w-0 px-2 pt-4 pb-12 animate-fade-in">
+      <div className="w-full bg-zinc-900 rounded-2xl px-4 py-5 border border-zinc-800 space-y-5 text-center">
         <CheckCircle2 size={44} className="mx-auto text-emerald-400" />
         <h2 className="text-2xl font-bold tracking-tight">Замовлення #{order.id} оформлено</h2>
         <p className="text-sm text-zinc-400">Кухня отримала замовлення. Оплата при отриманні.</p>

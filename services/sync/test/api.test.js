@@ -182,7 +182,7 @@ test('scheduled order: one confirmation, capped delay, protected early start and
   assert.equal((await request(`${path}/status`, 'PATCH', { status: 'archived' })).status, 200);
 });
 
-test('ASAP uses a quarter-hour deadline and preserves lavash toasting in the order', async () => {
+test('ASAP uses a quarter-hour deadline and ignores removed toasting options in the order', async () => {
   const result = await request('/api/orders', 'POST', { items: [{ ...item, toastingLevel: 'strong' }], timingMode: 'asap' });
   assert.equal(result.status, 201);
   const order = result.data.order;
@@ -190,10 +190,10 @@ test('ASAP uses a quarter-hour deadline and preserves lavash toasting in the ord
   assert.equal(order.baselineReadyAt % (15 * 60000), 0);
   assert.ok(order.baselineReadyAt - order.createdAt >= 15 * 60000);
   assert.ok(order.baselineReadyAt - order.createdAt < 30 * 60000);
-  assert.equal(order.items[0].toasting, 'Сильніше');
+  assert.equal(order.items[0].toasting, undefined);
   assert.equal(order.items[0].unitPrice, 190);
   const accepted = await request(`/api/orders/${order.id}/accept`, 'POST', { delayMinutes: 0 });
-  assert.equal(accepted.data.order.items[0].toastingLevel, 'strong');
+  assert.equal(accepted.data.order.items[0].toastingLevel, undefined);
   assert.equal(accepted.data.order.confirmedReadyAt, order.baselineReadyAt);
 });
 
@@ -272,7 +272,7 @@ test('manual kitchen orders atomically confirm selected sizes and deadlines with
   assert.ok(order.acceptedAt);
   assert.equal(order.totalPrice, 520);
   assert.equal(order.items[0].name, 'Фірмова шаурма · Велика (550 г)');
-  assert.equal(order.items[0].toasting, 'Сильніше');
+  assert.equal(order.items[0].toasting, undefined);
   assert.equal(order.paymentStatus, 'cash_due');
   assert.equal((await request(`/api/orders/${order.id}/accept`, 'POST', { delayMinutes: 5 })).status, 409);
   assert.equal((await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'cooking' })).data.code, 'EARLY_START');
@@ -358,14 +358,14 @@ test('menu changes affect new quotes, reject stale totals, preserve old order sn
   }
 });
 
-test('pickup checkout uses admin address, verified default phone, napkins and receipt payment only', async () => {
+test('pickup checkout uses admin address, verified default phone, cutlery and receipt payment only', async () => {
   const menu = (await request('/api/menu')).data;
   assert.equal(menu.point.address, 'м. Полтава, вул. Соборності, 46');
   assert.equal(menu.point.metro, '');
   assert.equal(menu.point.pickupDiscountPercent, 0);
   assert.equal(menu.point.deliveryEnabled, false);
   assert.equal(menu.products.find(product => product.id === 'shawarma-signature').tag, '🔥 Найпопулярніша');
-  const payload = { items: [item], paymentMethod: 'cash', napkins: false, expectedTotal: 190 };
+  const payload = { items: [item], paymentMethod: 'cash', cutlery: false, expectedTotal: 190 };
   const originalAddress = menu.point.address;
   try {
     await admin('/points/demo', 'PATCH', { address: 'Updated admin pickup address' });
@@ -374,7 +374,6 @@ test('pickup checkout uses admin address, verified default phone, napkins and re
     assert.equal(result.status, 201);
     assert.equal(result.data.order.selectedLocation.name, 'Updated admin pickup address');
     assert.equal(result.data.order.phoneNumber, '+380501234567');
-    assert.equal(result.data.order.napkins, false);
     assert.equal(result.data.order.cutlery, false);
     assert.equal(result.data.order.discount, 0);
     assert.equal(result.data.order.paymentStatus, 'cash_due');
@@ -382,7 +381,7 @@ test('pickup checkout uses admin address, verified default phone, napkins and re
     assert.equal((await request('/api/orders', 'POST', { ...payload, paymentMethod: 'card' })).status, 409);
     assert.equal((await request('/api/orders', 'POST', { ...payload, paymentMethod: 'telegram' })).status, 409);
     assert.equal((await request('/api/orders', 'POST', { ...payload, orderType: 'delivery' })).status, 409);
-    assert.equal((await request('/api/orders', 'POST', { ...payload, napkins: 'false' })).status, 400);
+    assert.equal((await request('/api/orders', 'POST', { ...payload, cutlery: 'false' })).status, 400);
   } finally { await admin('/points/demo', 'PATCH', { address: originalAddress }); }
 });
 
@@ -397,7 +396,7 @@ test('schedule exceptions close ordering; minute-level schedules and modifier ed
     const manualSlots = (await request('/api/availability')).data.manualSlots;
     const manualOnHoliday = await request('/api/kitchen/orders', 'POST', { items: [{ ...item, toastingLevel: 'normal' }], requestedReadyAt: manualSlots[0] });
     assert.equal(manualOnHoliday.status, 201);
-    assert.equal(manualOnHoliday.data.order.items[0].toasting, 'Звичайна піджарка');
+    assert.equal(manualOnHoliday.data.order.items[0].toasting, undefined);
     assert.equal(manualOnHoliday.data.order.confirmedReadyAt, manualSlots[0]);
     await admin('/points/demo', 'PATCH', { exceptions: [], weeklyHours: point.weeklyHours.map(() => ({ closed: false, open: '00:00', close: '00:15' })) });
     assert.equal((await request('/api/availability')).data.asapAvailable, false);
@@ -471,4 +470,34 @@ test('clear removes active and archived orders instead of generating demo histor
   const cleared = (await request('/api/orders')).data;
   assert.deepEqual(cleared.orders, []);
   assert.deepEqual(cleared.archivedOrders, []);
+});
+
+
+test('custom ready time accepts arbitrary future minutes, deduplicates retries and rejects stale edits', async () => {
+  const created = await request('/api/orders', 'POST', { items: [item] });
+  assert.equal(created.status, 201);
+  const order = created.data.order;
+  const path = `/api/orders/${order.id}/ready-time`;
+  const readyAt = order.baselineReadyAt + 47 * 60000;
+  const changed = await request(path, 'POST', { readyAt, expectedReadyAt: order.baselineReadyAt });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.data.order.confirmedReadyAt, readyAt);
+  assert.equal(changed.data.order.timeRevision, 1);
+  assert.equal((await request(path, 'POST', { readyAt, expectedReadyAt: order.baselineReadyAt })).data.order.timeRevision, 1);
+  assert.equal((await request(path, 'POST', { readyAt: readyAt + 60000, expectedReadyAt: order.baselineReadyAt })).status, 409);
+  for (const value of [0, '18:30', readyAt + 1, null]) assert.equal((await request(path, 'POST', { readyAt: value })).status, 400);
+  assert.equal((await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'cooking', confirmEarly: true })).status, 200);
+  const cookingChange = await request(path, 'POST', { readyAt: readyAt + 60000, expectedReadyAt: readyAt });
+  assert.equal(cookingChange.status, 200);
+  assert.equal(cookingChange.data.order.timeRevision, 2);
+  assert.equal(cookingChange.data.order.status, 'cooking');
+});
+
+test('starting preparation implicitly confirms the displayed deadline', async () => {
+  const created = await request('/api/orders', 'POST', { items: [item] });
+  const order = created.data.order;
+  const result = await request(`/api/orders/${order.id}/status`, 'PATCH', { status: 'cooking', confirmEarly: true });
+  assert.equal(result.status, 200);
+  assert.equal(result.data.order.confirmedReadyAt, order.baselineReadyAt);
+  assert.ok(result.data.order.acceptedAt);
 });

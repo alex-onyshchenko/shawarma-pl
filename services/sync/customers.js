@@ -61,7 +61,7 @@ export function createCustomers(db, token) {
         quantities.set(item.productId, (quantities.get(item.productId) || 0) + item.qty);
       }
       if (total > ORDER_LIMITS.totalItems || [...quantities.values()].some(quantity => quantity > ORDER_LIMITS.perProduct)) {
-        fail('Максимум 5 одиниць однієї позиції та 10 товарів у замовленні. Розміри й піджарка враховуються разом.', 409, 'ORDER_LIMIT');
+        fail('Максимум 5 одиниць однієї позиції та 10 товарів у замовленні. Усі розміри враховуються разом.', 409, 'ORDER_LIMIT');
       }
       if (customer.prepayment_only || Math.round(quote.totalPrice * 100) > ORDER_LIMITS.cashMax * 100) {
         fail(customer.prepayment_only

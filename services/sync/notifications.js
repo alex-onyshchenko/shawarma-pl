@@ -3,9 +3,11 @@ import { formatTime } from './timing.js';
 export function notificationText(order, kind) {
   const at = formatTime(order.confirmedReadyAt || order.baselineReadyAt, order.timeZone);
   if (kind === 'placed') {
-    const items = order.items.map(item => `${item.qty} × ${item.name}${item.toasting ? ` · лаваш: ${item.toasting.toLowerCase()}` : ''}`).join('\n');
-    return `✅ Замовлення #${order.id} оформлено!\n${items}\n\nСума: ${order.totalPrice} ₴. Оплата при отриманні.\nПопередній час видачі: ${at}. Очікуємо підтвердження кухні.\n📍 ${order.selectedLocation?.name || order.pointName}`.slice(0, 4000);
+    const items = order.items.map(item => `${item.qty} × ${item.name}`).join('\n');
+    return `✅ Замовлення #${order.id} оформлено!\n${items}\n\nСума: ${order.totalPrice} ₴. Оплата при отриманні.\nПопередній час видачі: ${at}. Повідомимо, коли почнемо готувати.\n📍 ${order.selectedLocation?.name || order.pointName}`.slice(0, 4000);
   }
+  if (kind.startsWith('time_changed:')) return `⏱ Час видачі замовлення #${order.id} змінено: ${new Intl.DateTimeFormat('uk-UA', { timeZone: order.timeZone, dateStyle: 'short', timeStyle: 'short' }).format(order.confirmedReadyAt)}. Чекаємо на вас!`;
+  if (kind === 'cancelled') return `Замовлення #${order.id} скасовано.\n${order.cancellationComment.trim()}`;
   if (kind === 'confirmed') return order.kitchenDelayMinutes > 0
     ? `⚠️ Замовлення #${order.id} вже в черзі! Через навантаження кухні новий час видачі — ${at}. Дякуємо за розуміння!`
     : `🎯 Час видачі замовлення #${order.id} підтверджено: ${at}. Оплата при отриманні. Чекаємо на вас!`;
@@ -22,12 +24,14 @@ export function createNotifications(db, { token = '', fetcher = fetch, now = Dat
     next_at INTEGER NOT NULL DEFAULT 0, message_id INTEGER,
     UNIQUE(order_key, kind)
   )`);
-  db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE kind='cancelled' AND state='pending'").run();
   const key = order => `${order.createdAt}:${order.id}`;
   let busy = false;
   function cancel(order) { db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending'").run(key(order)); }
   function enqueue(order, kind) {
-    if (kind === 'cancelled') { cancel(order); return; }
+    if (kind === 'cancelled') {
+      if (!order.cancellationComment?.trim()) { cancel(order); return; }
+      db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending' AND kind!='cancelled'").run(key(order));
+    }
     if (!token || !order?.telegramUserId || !order.notificationsEnabled) return;
     if (kind === 'no_show') db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending' AND kind!=?").run(key(order), kind);
     db.prepare('INSERT OR IGNORE INTO telegram_outbox(order_key,kind,chat_id,text,next_at) VALUES(?,?,?,?,?)')

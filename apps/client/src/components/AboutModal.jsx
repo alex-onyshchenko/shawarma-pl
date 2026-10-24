@@ -1,3 +1,4 @@
+import { mediaUrl } from '../utils/orderSync';
 import React from 'react';
 import { X, Flame, MapPin, Clock, Phone, Instagram, Send, ShieldCheck } from 'lucide-react';
 import { tg } from '../utils/telegram';
@@ -15,7 +16,7 @@ export default function AboutModal({ onClose, point }) {
       <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 max-w-sm mx-auto bg-zinc-900 border border-zinc-700/80 rounded-3xl p-5 z-50 shadow-2xl animate-scale-up space-y-4">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-2">
-            <img src="/brand/shaurmisha.jpg" alt="Логотип ШаурМіша" width="40" height="40" className="w-10 h-10 rounded-xl object-contain" />
+            <img src={mediaUrl(point?.logoUrl) || '/brand/shaurmisha.jpg'} alt="Логотип ШаурМіша" width="40" height="40" className="w-10 h-10 rounded-xl object-contain" />
             <div>
               <h3 className="font-bold text-white text-base leading-tight">{point?.name || 'ШаурМіша'}</h3>
               <p className="text-zinc-400 text-xs">Самовивіз • Готуємо для вас</p>

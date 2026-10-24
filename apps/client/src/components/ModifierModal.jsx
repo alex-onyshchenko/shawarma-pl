@@ -10,7 +10,6 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
   const [selectedLavash, setSelectedLavash] = useState(product.hasModifiers ? MODIFIERS.lavash[0] : null);
   const [selectedSpiciness, setSelectedSpiciness] = useState(product.availableSpiciness ? MODIFIERS.spiciness[0] : null);
   const [quantity, setQuantity] = useState(1);
-  const [toastingLevel, setToastingLevel] = useState('normal');
 
   // Calculate price for single item
   const singleItemTotal =
@@ -59,7 +58,7 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
       spiciness: selectedSpiciness,
       addedModifiers: addedMods,
       removedModifiers: removedMods,
-      toastingLevel: product.category === 'Шаурма' ? toastingLevel : null,
+
       comment: '',
       totalPrice: finalTotal,
     });
@@ -293,12 +292,6 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
             </div>
           </div>}
 
-          {!previewOnly && product.category === 'Шаурма' && <fieldset>
-            <legend className="font-semibold text-sm text-zinc-200 mb-2.5">Підсмажити лаваш</legend>
-            <div className="grid grid-cols-3 gap-2">
-              {[['light', 'Слабіше'], ['normal', 'Звичайна'], ['strong', 'Сильніше']].map(([value, label]) => <button key={value} type="button" aria-pressed={toastingLevel === value} onClick={() => { tg.haptic.selection(); setToastingLevel(value); }} className={`p-3 rounded-xl border text-sm font-semibold transition-colors ${toastingLevel === value ? 'border-orange-500 bg-orange-500/15 text-white ring-1 ring-orange-500' : 'border-zinc-800 bg-zinc-800/40 text-zinc-300'}`}>{label}</button>)}
-            </div>
-          </fieldset>}
 
         </div>
 

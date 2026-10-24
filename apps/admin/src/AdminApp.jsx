@@ -50,7 +50,7 @@ export default function AdminApp() {
   const point = data?.points.find(item => item.id === pointId) || data?.points[0];
   const menu = (data?.menus[point?.id] || []).filter(item => ['Шаурма', 'Напої'].includes(item.category));
   return <div className="admin-shell">
-    <header className="site-header"><div className="header-inner"><a className="brand" href={base}><img src={base + 'brand/shaurmisha.jpg'} alt="ШаурМіша"/><div><strong>ШаурМіша</strong><span>Управління закладом</span></div></a><span className="admin-badge">Адміністратор</span></div></header>
+    <header className="site-header"><div className="header-inner"><a className="brand" href={base}><img src={photoUrl(point?.logoUrl) || base + 'brand/shaurmisha.jpg'} alt="ШаурМіша"/><div><strong>ШаурМіша</strong><span>Управління закладом</span></div></a><span className="admin-badge">Адміністратор</span></div></header>
     <main className="workspace">
       {error && !modal && <div role="alert" className="notice error">{error}<button aria-label="Закрити повідомлення" onClick={() => setError('')}><X size={17}/></button></div>}
       {!data ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><p>{error ? 'Не вдалося завантажити дані' : 'Завантажуємо заклад…'}</p>{error && <button className="button secondary" onClick={() => { setError(''); load().catch(error => setError(error.message)); }}>Спробувати ще раз</button>}</div> : <>
@@ -77,10 +77,12 @@ export default function AdminApp() {
 }
 function PointForm({ point, busy, onSave }) {
   const [value, setValue] = useState(() => structuredClone(point));
+  const [uploading, setUploading] = useState(false);
   const set = (key, data) => setValue(previous => ({ ...previous, [key]: data }));
   const hours = (index, changes) => set('weeklyHours', value.weeklyHours.map((row, i) => i === index ? { ...row, ...changes } : row));
-  return <form className="point-form" onSubmit={event => { event.preventDefault(); const { name, address, phone, description, timeZone, weeklyHours, exceptions } = value; onSave({ name, address, phone, description, timeZone, weeklyHours, exceptions }); }}>
+  return <form className="point-form" onSubmit={event => { event.preventDefault(); if (uploading) return; const { name, address, phone, description, timeZone, weeklyHours, exceptions, logoUrl = '' } = value; onSave({ name, address, phone, description, timeZone, weeklyHours, exceptions, logoUrl }); }}>
     <section className="panel"><div className="section-heading"><div><h2>Інформація про заклад</h2><p>Ці дані бачать клієнти під час замовлення.</p></div><MapPin size={20}/></div>
+      <div><p className="hint">Логотип точки</p><PhotoPicker value={value.logoUrl} name={value.name} onChange={url => set('logoUrl', url)} onBusy={setUploading}/></div>
       <Field label="Назва" value={value.name} required maxLength={100} onChange={event => set('name', event.target.value)}/>
       <Field label="Адреса" value={value.address} required maxLength={200} onChange={event => set('address', event.target.value)}/>
       <Field label="Телефон" type="tel" value={value.phone} maxLength={50} onChange={event => set('phone', event.target.value)}/>
@@ -90,7 +92,7 @@ function PointForm({ point, busy, onSave }) {
     <section className="panel"><div className="section-heading"><div><h2>Графік роботи</h2><p>Місцевий час закладу. Нічні зміни поки не підтримуються.</p></div><Clock3 size={20}/></div>
       <div className="hours-list">{value.weeklyHours.map((row, index) => <div className="hours-row" key={index}><strong>{days[index]}</strong><label className="day-toggle"><input type="checkbox" checked={!row.closed} onChange={event => hours(index, { closed: !event.target.checked })}/><span>{row.closed ? 'Вихідний' : 'Працюємо'}</span></label><div className="time-range"><input aria-label={`${days[index]}: відкриття`} placeholder="10:00" pattern="(?:[01][0-9]|2[0-3]):[0-5][0-9]" required={!row.closed} disabled={row.closed} value={row.open} onChange={event => hours(index, { open: event.target.value })}/><span>—</span><input aria-label={`${days[index]}: закриття`} placeholder="22:00" pattern="(?:(?:[01][0-9]|2[0-3]):[0-5][0-9]|24:00)" required={!row.closed} disabled={row.closed} value={row.close} onChange={event => hours(index, { close: event.target.value })}/></div></div>)}</div>
       <details className="exceptions"><summary>Особливі дні {value.exceptions.length ? `(${value.exceptions.length})` : ''}</summary>{value.exceptions.map((row, index) => <div key={index} className="exception-row"><input aria-label="Дата винятку" type="date" required value={row.date} onChange={event => set('exceptions', value.exceptions.map((item, i) => i === index ? { ...item, date: event.target.value } : item))}/><Toggle label="Вихідний" checked={row.closed} onChange={closed => set('exceptions', value.exceptions.map((item, i) => i === index ? { ...item, closed } : item))}/>{!row.closed && <><input aria-label="Відкриття у винятковий день" value={row.open} onChange={event => set('exceptions', value.exceptions.map((item, i) => i === index ? { ...item, open: event.target.value } : item))}/><input aria-label="Закриття у винятковий день" value={row.close} onChange={event => set('exceptions', value.exceptions.map((item, i) => i === index ? { ...item, close: event.target.value } : item))}/></>}<button className="icon-button" type="button" aria-label="Прибрати виняток" onClick={() => set('exceptions', value.exceptions.filter((_, i) => i !== index))}><X size={17}/></button></div>)}<button className="button secondary" type="button" onClick={() => set('exceptions', [...value.exceptions, { date: '', closed: true, open: '10:00', close: '22:00' }])}><Plus size={16}/>Додати день</button></details>
-    </section><div className="form-actions"><button className="button primary" disabled={busy}>{busy ? 'Зберігаємо…' : 'Зберегти зміни'}<Check size={17}/></button></div>
+    </section><div className="form-actions"><button className="button primary" disabled={busy || uploading}>{busy ? 'Зберігаємо…' : 'Зберегти зміни'}<Check size={17}/></button></div>
   </form>;
 }
 function MenuList({ title, menu, busy, onCreate, onEdit, onToggle }) {

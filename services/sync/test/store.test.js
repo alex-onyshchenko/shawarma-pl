@@ -125,22 +125,28 @@ test('existing SQLite menu migrates once, preserving orders and subsequent admin
 });
 
 
-test('lavash toasting is a validated snapshot option without an extra charge', () => {
+test('removed toasting input is ignored without affecting the quoted price', () => {
   const store = createStore(':memory:');
   try {
-    const item = { productId: 'shawarma-classic', sizeId: 'medium', qty: 1 };
-    const normal = quoteOrder(store, { items: [item] });
-    assert.equal(normal.items[0].toastingLevel, 'normal');
-    assert.equal(normal.items[0].toasting, 'Звичайна піджарка');
-    assert.equal(normal.totalPrice, 220);
-    const light = quoteOrder(store, { items: [{ ...item, toastingLevel: 'light' }] });
-    const strong = quoteOrder(store, { items: [{ ...item, toastingLevel: 'strong' }] });
-    assert.equal(light.items[0].toasting, 'Слабіше');
-    assert.equal(strong.items[0].toasting, 'Сильніше');
-    assert.equal(strong.items[0].toastingLevel, 'strong');
-    assert.equal(light.totalPrice, 220);
-    assert.equal(strong.totalPrice, light.totalPrice);
-    for (const toastingLevel of ['burnt', '', false, 1]) assert.throws(() => quoteOrder(store, { items: [{ ...item, toastingLevel }] }));
-    assert.throws(() => quoteOrder(store, { items: [{ productId: '12', qty: 1, toastingLevel: 'strong' }] }));
+    for (const toastingLevel of [undefined, 'normal', 'strong', 'light', 'burnt']) {
+      const quote = quoteOrder(store, { items: [{ productId: 'shawarma-classic', sizeId: 'medium', qty: 1, toastingLevel }] });
+      assert.equal(quote.totalPrice, 220);
+      assert.equal(quote.items[0].toasting, undefined);
+      assert.equal(quote.items[0].toastingLevel, undefined);
+    }
+  } finally { store.close(); }
+});
+
+test('point logo validates, persists and is returned in the public menu', () => {
+  const store = createStore(':memory:');
+  try {
+    const url = '/media/12345678-abcd.webp';
+    store.updatePoint('demo', { logoUrl: url });
+    assert.equal(store.publicMenu().point.logoUrl, url);
+    store.updatePoint('demo', { phone: '+380501234567' });
+    assert.equal(store.point('demo').logoUrl, url);
+    assert.throws(() => store.updatePoint('demo', { logoUrl: 'javascript:alert(1)' }));
+    store.updatePoint('demo', { logoUrl: '' });
+    assert.equal(store.point('demo').logoUrl, '');
   } finally { store.close(); }
 });

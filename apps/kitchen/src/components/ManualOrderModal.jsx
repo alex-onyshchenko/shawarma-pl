@@ -9,7 +9,6 @@ export default function ManualOrderModal({ menu, availability, onClose, onCreate
   const product = products.find(product => product.id === productId);
   const [sizeId, setSizeId] = useState(product?.sizes?.[0]?.id || '');
   const size = product?.sizes?.find(size => size.id === sizeId);
-  const [toastingLevel, setToastingLevel] = useState('normal');
   const [quantity, setQuantity] = useState(1);
   const [readyAt, setReadyAt] = useState(String(availability?.manualSlots?.[0] || ''));
   const [busy, setBusy] = useState(false);
@@ -33,7 +32,7 @@ export default function ManualOrderModal({ menu, availability, onClose, onCreate
     submitting.current = true; setBusy(true); setError('');
     pending.current ||= {
       clientRequestId: crypto.randomUUID(), pointId: menu.point.id,
-      items: [{ productId, sizeId: size?.id || null, toastingLevel, qty: quantity }],
+      items: [{ productId, sizeId: size?.id || null, qty: quantity }],
       timingMode: 'scheduled', requestedReadyAt: Number(readyAt),
       orderType: 'pickup', paymentMethod: 'cash', customerName: 'Клієнт у закладі', expectedTotal: total,
     };
@@ -53,7 +52,6 @@ export default function ManualOrderModal({ menu, availability, onClose, onCreate
       <fieldset disabled={busy || retrying} className="space-y-4">
         <label className="block text-sm text-zinc-300">Тип шаурми<select className={fieldClass} value={productId} required onChange={event => { const next = products.find(product => product.id === event.target.value); setProductId(event.target.value); setSizeId(next?.sizes?.[0]?.id || ''); }}>{!products.length && <option value="">Немає доступної шаурми</option>}{products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
         <label className="block text-sm text-zinc-300">Розмір<select className={fieldClass} value={sizeId} required={!!product?.sizes?.length} onChange={event => setSizeId(event.target.value)}>{!product?.sizes?.length && <option value="">Стандартний</option>}{product?.sizes?.map(size => <option key={size.id} value={size.id}>{size.name} · {size.weight} · {size.price} ₴</option>)}</select></label>
-        <label className="block text-sm text-zinc-300">Підсмажити лаваш<select className={fieldClass} value={toastingLevel} onChange={event => setToastingLevel(event.target.value)}><option value="light">Слабіше</option><option value="normal">Звичайна піджарка</option><option value="strong">Сильніше</option></select></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm text-zinc-300">Кількість<input className={fieldClass} type="number" min="1" max="99" step="1" required value={quantity} onChange={event => setQuantity(Number(event.target.value))}/></label>
           <label className="block text-sm text-zinc-300">Час готовності<select className={fieldClass} value={readyAt} required onChange={event => setReadyAt(event.target.value)}>{readyAt && !slots.includes(Number(readyAt)) && <option value={readyAt}>{slotLabel(Number(readyAt))} — оновимо</option>}{!slots.length && !readyAt && <option value="">Немає часу</option>}{slots.map(slot => <option key={slot} value={slot}>{slotLabel(slot)}</option>)}</select></label>

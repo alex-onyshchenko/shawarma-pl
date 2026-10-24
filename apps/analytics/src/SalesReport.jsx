@@ -3,7 +3,6 @@ import { Download, FileText, LoaderCircle } from 'lucide-react';
 
 const API_BASE = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/+$/, '');
 const money = kopecks => new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(kopecks / 100) + ' ₴';
-const date = (timestamp, timeZone) => new Intl.DateTimeFormat('uk-UA', { timeZone, dateStyle: 'short', timeStyle: 'short' }).format(timestamp);
 
 export default function SalesReport() {
   const [period, setPeriod] = useState('7'), [commission, setCommission] = useState('0');
@@ -60,10 +59,7 @@ export default function SalesReport() {
     {loading && <div role="status" className="flex items-center gap-2 p-5 text-sm text-zinc-400"><LoaderCircle size={18} className="animate-spin"/>Рахуємо продажі…</div>}
     {report && !loading && <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Продажів', report.count], ['Сума продажів', money(report.totals.amountKopecks)], [`Комісія ${report.commissionRate}%`, money(report.totals.commissionKopecks)], ['Після комісії', money(report.totals.netKopecks)]].map(([label, value]) => <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-5" key={label}><p className="text-xs text-zinc-400">{label}</p><p className="mt-2 break-words text-xl font-semibold tabular-nums sm:text-2xl">{value}</p></div>)}</div>
-      <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900"><div className="border-b border-zinc-800 p-5"><h3 className="font-semibold">Виписка продажів</h3><p className="mt-1 text-xs text-zinc-500">{date(report.from, report.timeZone)} - {date(report.to, report.timeZone)} · {report.timeZone}</p>{report.estimatedDates && <p className="mt-2 text-xs text-amber-300/80">* Для старих чеків без часу видачі використано час створення замовлення.</p>}</div>
-        <div className="max-h-[600px] overflow-auto"><table className="w-full min-w-[700px] text-sm"><thead className="sticky top-0 bg-zinc-900 text-left text-xs text-zinc-500"><tr>{['Чек', 'Дата / час', 'Позиції', 'Сума', 'Комісія'].map((label, index) => <th key={label} className={`px-5 py-3 font-medium ${index > 2 ? 'text-right' : ''}`}>{label}</th>)}</tr></thead><tbody>{report.sales.map(sale => <tr className="border-t border-zinc-800" key={sale.id}><td className="px-5 py-4 font-mono text-orange-400">#{sale.id}</td><td className="whitespace-nowrap px-5 py-4 text-xs text-zinc-400">{date(sale.soldAt, report.timeZone)}{sale.estimatedDate ? '*' : ''}</td><td className="px-5 py-4 text-xs leading-6 text-zinc-300">{sale.items.map((item, index) => <p key={index}>{item.qty} × {item.name}</p>)}</td><td className="whitespace-nowrap px-5 py-4 text-right tabular-nums">{money(sale.amountKopecks)}</td><td className="whitespace-nowrap px-5 py-4 text-right tabular-nums text-zinc-400">{money(sale.commissionKopecks)}</td></tr>)}</tbody><tfoot className="border-t border-zinc-700"><tr><th colSpan={3} className="px-5 py-4 text-left font-semibold">Разом · чеків: {report.count}</th><td className="whitespace-nowrap px-5 py-4 text-right font-semibold">{money(report.totals.amountKopecks)}</td><td className="whitespace-nowrap px-5 py-4 text-right font-semibold">{money(report.totals.commissionKopecks)}</td></tr></tfoot></table></div>
-        {!report.count && <p className="p-8 text-center text-sm text-zinc-500">За цей період виданих замовлень немає. PDF можна сформувати з нульовими підсумками.</p>}
-      </div>
+      {!report.count && <p className="text-center text-sm text-zinc-500">За цей період виданих замовлень немає.</p>}
     </>}
   </section>;
 }

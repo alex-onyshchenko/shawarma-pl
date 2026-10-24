@@ -68,10 +68,22 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(declined.body.order.notificationsEnabled, false);
     assert.equal((await call('/api/client/notifications', 'POST', { id: declined.body.order.id, telegramInitData: body.telegramInitData })).status, 200);
     await waitFor(() => sent().length === 5);
+    const timePath = '/api/orders/' + id + '/ready-time';
+    const firstTime = placed.body.order.baselineReadyAt + 60000;
+    const secondTime = firstTime + 60000;
+    assert.equal((await call(timePath, 'POST', { readyAt: firstTime })).status, 200);
+    assert.equal((await call(timePath, 'POST', { readyAt: secondTime })).status, 200);
+    assert.equal((await call(timePath, 'POST', { readyAt: secondTime })).status, 200);
+    await waitFor(() => sent().filter(message => message.text.includes('Час видачі замовлення')).length === 2);
+    const silent = await call('/api/orders', 'POST', { ...body, clientRequestId: 'silent-cancel' });
+    const silentId = silent.body.order.id;
+    assert.equal((await call('/api/orders/' + silentId + '/cancel', 'POST', { comment: '   ' })).body.order.cancellationComment, '');
+    const silentNoComment = await call('/api/orders', 'POST', { ...body, clientRequestId: 'silent-no-comment' });
+    assert.equal((await call('/api/orders/' + silentNoComment.body.order.id + '/cancel', 'POST', {})).status, 200);
     const cancelled = await call('/api/orders', 'POST', { ...body, clientRequestId: 'cancel-test' });
     assert.equal(cancelled.status, 201);
     const cancelPath = '/api/orders/' + cancelled.body.order.id;
-    for (const comment of ['', '   ', 'x'.repeat(501), 123]) {
+    for (const comment of ['x'.repeat(501), 123]) {
       assert.equal((await call(cancelPath + '/cancel', 'POST', { comment })).status, 400);
     }
     const result = await call(cancelPath + '/cancel', 'POST', { comment: '  Закінчилася курка  ' });
@@ -92,7 +104,10 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(noShow.status, 200);
     await waitFor(() => sent().some(message => message.text.includes('позначене як невикуплене')));
     assert.equal(sent().filter(message => message.text.includes('позначене як невикуплене')).length, 1);
-    assert.ok(!sent().some(message => /скасовано|Закінчилася курка/.test(message.text)));
+    await waitFor(() => sent().some(message => message.text.includes('Закінчилася курка')));
+    assert.equal(sent().filter(message => message.text.includes('Закінчилася курка')).length, 1);
+    assert.ok(!sent().some(message => message.text.includes(`#${silentId} скасовано`)));
+    assert.equal(sent().filter(message => message.text.includes('Час видачі замовлення')).length, 2);
     assert.ok(!output.includes(token));
   } finally {
     if (child.exitCode === null && child.signalCode === null) { const ended = once(child, 'exit'); child.kill(); await ended; }

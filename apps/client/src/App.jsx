@@ -124,7 +124,6 @@ function MenuApp({ profile, onProfileChange }) {
   const handleAddCustomizedItem = ({
     product,
     size,
-    toastingLevel,
     quantity,
     lavash,
     spiciness,
@@ -142,7 +141,6 @@ function MenuApp({ profile, onProfileChange }) {
     const configKey = JSON.stringify({
       productId: product.id,
       sizeId: size?.id,
-      toastingLevel,
       lavashId: lavash?.id,
       spicinessLevel: spiciness?.level,
       addedIds: addedModifiers.map(m => m.id).sort(),
@@ -164,7 +162,6 @@ function MenuApp({ profile, onProfileChange }) {
           configKey,
           product,
           size,
-          toastingLevel,
           quantity,
           unitPrice,
           lavash,
@@ -255,7 +252,7 @@ function MenuApp({ profile, onProfileChange }) {
       timingMode: orderData.timingMode,
       requestedReadyAt: orderData.requestedReadyAt,
       paymentMethod: orderData.paymentMethod,
-      napkins: orderData.napkins,
+      cutlery: orderData.cutlery,
       orderType: orderData.deliveryType,
       customerName: user?.first_name ? `${user.first_name} (Telegram)` : 'Клієнт Telegram',
       phoneNumber: orderData.phoneNumber,
@@ -264,7 +261,7 @@ function MenuApp({ profile, onProfileChange }) {
       items: orderData.cart.map(item => ({
         productId: item.product.id,
         sizeId: item.size?.id || null,
-        toastingLevel: item.toastingLevel || null,
+
         lavashId: item.lavash?.id || null,
         addedModifierIds: item.addedModifiers.map(mod => mod.id),
         removedModifierIds: item.removedModifiers.map(mod => mod.id),
@@ -303,6 +300,7 @@ function MenuApp({ profile, onProfileChange }) {
         {/* Telegram Header */}
         <TelegramHeader
           pointName={menu?.point.name}
+          logoUrl={menu?.point.logoUrl}
           view={view}
           setView={setView}
           cartCount={cartItemsCount}

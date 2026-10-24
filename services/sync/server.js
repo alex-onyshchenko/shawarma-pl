@@ -32,8 +32,8 @@ function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(publicJson(body));
 }
-function announce(order) {
-  broadcast('order_status_updated', { id: order.id, status: order.status, order });
+function announce(order, notificationKind) {
+  broadcast('order_status_updated', { id: order.id, status: order.status, order, notificationKind });
 }
 function confirmationMessage(order) {
   const at = formatTime(order.confirmedReadyAt, order.timeZone);
@@ -64,8 +64,9 @@ function broadcast(eventType, payload) {
       if (order) {
         if (order.status === 'no_show') customers.restrict(order.telegramUserId, order.id);
         if (eventType === 'new_order') notifications.enqueue(order, 'placed');
+        else if (payload.notificationKind) notifications.enqueue(order, payload.notificationKind);
         else if (order.status === 'new' && order.acceptedAt) notifications.enqueue(order, 'confirmed');
-        else if (order.status === 'cancelled') notifications.cancel(order);
+        else if (order.status === 'cancelled') notifications.enqueue(order, 'cancelled');
         else if (['cooking', 'ready', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
       }
       store.db.exec('COMMIT');
@@ -170,7 +171,7 @@ const server = http.createServer(async (req, res) => {
       store.db.exec('BEGIN IMMEDIATE');
       try {
         store.set('orders', { orders, archivedOrders, nextOrderId });
-        if (order.status === 'cancelled') notifications.cancel(order);
+        if (order.status === 'cancelled') notifications.enqueue(order, 'cancelled');
         else if (['cooking', 'ready', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
         else if (order.status === 'new') notifications.enqueue(order, order.acceptedAt ? 'confirmed' : 'placed');
         store.db.exec('COMMIT');
@@ -243,7 +244,7 @@ const server = http.createServer(async (req, res) => {
       if (!manual && (!cafe.acceptingOrders || cafe.onBreak)) { json(res, 409, { error: cafe.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено', code: cafe.onBreak ? 'LUNCH_BREAK' : 'ORDERS_PAUSED' }); return; }
       if (!Array.isArray(data.items) || !data.items.length) throw new Error('Замовлення не може бути порожнім');
       if (data.paymentMethod && data.paymentMethod !== 'cash') { json(res, 409, { error: 'Наразі доступна лише оплата при отриманні' }); return; }
-      if (data.napkins !== undefined && typeof data.napkins !== 'boolean') { json(res, 400, { error: 'Перевірте вибір серветок' }); return; }
+      if (data.cutlery !== undefined && typeof data.cutlery !== 'boolean') { json(res, 400, { error: 'Перевірте вибір приборів' }); return; }
       const quote = quoteOrder(store, data);
       const phoneNumber = manual ? (typeof data.phoneNumber === 'string' ? data.phoneNumber.trim().slice(0, 50) : '') : customers.checkOrder(user, quote, data);
       const createdAt = Date.now();
@@ -271,11 +272,10 @@ const server = http.createServer(async (req, res) => {
         paymentStatus: 'cash_due',
         paymentSimulation: true,
         paidAt: null,
-        cutlery: false,
-        napkins: data.napkins ?? true,
+        cutlery: data.cutlery ?? true,
         notification: 'Замовлення оформлено. Очікуємо підтвердження часу кухнею.',
         orderType: data.orderType || 'pickup',
-        customerName: user?.first_name ? `${user.first_name} (Telegram)` : data.customerName || 'Telegram Замовник',
+        customerName: user?.first_name ? [user.first_name, user.last_name].filter(Boolean).join(' ') : data.customerName || 'Telegram Замовник',
         phoneNumber,
         totalPrice: data.totalPrice || data.finalTotal || 0,
         deliveryAddress: data.deliveryAddress || null,
@@ -323,13 +323,38 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const readyTimeMatch = pathname.match(/^\/api\/orders\/([^/]+)\/ready-time$/);
+  if (readyTimeMatch && req.method === 'POST') {
+    try {
+      const order = orders.find(item => item.id === decodeURIComponent(readyTimeMatch[1]));
+      if (!order) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
+      const { readyAt, expectedReadyAt } = await readJsonBody(req);
+      const previous = order.confirmedReadyAt || order.baselineReadyAt;
+      if (expectedReadyAt !== undefined && expectedReadyAt !== previous && readyAt !== previous) { json(res, 409, { error: 'Час уже змінився. Перевірте актуальний час і повторіть дію' }); return; }
+      // Retrying a successful request must not queue another Telegram message.
+      if (readyAt === previous) { json(res, 200, { success: true, order }); return; }
+      if (typeof readyAt !== 'number' || !Number.isFinite(readyAt) || !Number.isFinite(new Date(readyAt).getTime()) || readyAt % MINUTE !== 0 || readyAt <= Date.now()) {
+        json(res, 400, { error: 'Оберіть майбутні дату та час із точністю до хвилини' }); return;
+      }
+      const firstConfirmation = !order.acceptedAt;
+      order.confirmedReadyAt = readyAt;
+      order.acceptedAt ||= Date.now();
+      order.kitchenDelayMinutes = (readyAt - order.baselineReadyAt) / MINUTE;
+      order.timeRevision = (order.timeRevision || 0) + 1;
+      order.notification = `Час видачі змінено: ${formatTime(readyAt, order.timeZone)}`;
+      announce(order, firstConfirmation ? 'confirmed' : `time_changed:${order.timeRevision}`);
+      json(res, 200, { success: true, order });
+    } catch (error) { json(res, 400, { error: error.message }); }
+    return;
+  }
+
   const cancelMatch = pathname.match(/^\/api\/orders\/([^/]+)\/cancel$/);
   if (cancelMatch && req.method === 'POST') {
     try {
       const id = decodeURIComponent(cancelMatch[1]);
-      const { comment } = await readJsonBody(req);
-      if (typeof comment !== 'string' || !comment.trim() || comment.trim().length > 500) {
-        json(res, 400, { error: 'Вкажіть причину скасування (до 500 символів)' }); return;
+      const { comment = '' } = await readJsonBody(req);
+      if (typeof comment !== 'string' || comment.trim().length > 500) {
+        json(res, 400, { error: 'Коментар має містити до 500 символів' }); return;
       }
       const previous = archivedOrders.find(order => order.id === id);
       if (previous?.status === 'cancelled') { json(res, 200, { success: true, order: previous }); return; }
@@ -337,7 +362,7 @@ const server = http.createServer(async (req, res) => {
       if (index === -1) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
       const order = orders[index];
       if (order.status !== 'new') { json(res, 409, { error: 'Скасувати можна лише нове замовлення до початку приготування' }); return; }
-      const cancelled = { ...order, status: 'cancelled', cancellationComment: comment.trim(), cancelledAt: Date.now(), notification: `Замовлення скасовано. Причина: ${comment.trim()}` };
+      const cancelled = { ...order, status: 'cancelled', cancellationComment: comment.trim(), cancelledAt: Date.now(), notification: comment.trim() ? `Замовлення скасовано. Причина: ${comment.trim()}` : 'Замовлення скасовано' };
       orders.splice(index, 1);
       archivedOrders.unshift(cancelled);
       broadcast('order_status_updated', { id, status: 'cancelled', order: cancelled });
@@ -403,11 +428,11 @@ const server = http.createServer(async (req, res) => {
       const transitions = { new: ['cooking'], cooking: ['new', 'ready'], ready: ['cooking', 'archived'] };
       if (status === order.status) { json(res, 200, { success: true, order }); return; }
       if (!transitions[order.status]?.includes(status)) { json(res, 409, { error: 'Недозволена зміна статусу' }); return; }
-      if (!order.acceptedAt) { json(res, 409, { error: 'Спочатку підтвердьте час видачі' }); return; }
       if (['cooking', 'ready'].includes(status) && earlyStart(order, Date.now()) && confirmEarly !== true) {
-        json(res, 409, { code: 'EARLY_START', error: 'Це замовлення на майбутнє. Підтвердьте раннє приготування', readyAt: order.confirmedReadyAt }); return;
+        json(res, 409, { code: 'EARLY_START', error: 'Це замовлення на майбутнє. Підтвердьте раннє приготування', readyAt: order.confirmedReadyAt || order.baselineReadyAt }); return;
       }
       if (['cooking', 'ready'].includes(status) && earlyStart(order, Date.now()) && confirmEarly === true) order.earlyStartConfirmedAt = Date.now();
+      if (!order.acceptedAt) { order.acceptedAt = Date.now(); order.confirmedReadyAt = order.baselineReadyAt; }
       if (status === 'cooking') { order.cookingStartedAt = Date.now(); order.notification = '🔥 Кухар почав готувати ваше замовлення!'; }
       if (status === 'new') order.notification = 'Замовлення в черзі. Час видачі підтверджено.';
       if (status === 'ready') order.notification = '🎉 Ваше замовлення готове до видачі!';

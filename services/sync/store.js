@@ -40,6 +40,7 @@ function validatePoint(input, old) {
   try { new Intl.DateTimeFormat('en', { timeZone: value.timeZone }).format(); } catch { fail('Невірний часовий пояс'); }
   return {
     ...old,
+    logoUrl: validateImage(value.logoUrl ?? ''),
     name: text(value.name, 'Назва', 100), address: text(value.address, 'Адреса'),
     description: text(value.description, 'Опис', 1500, false), phone: text(value.phone, 'Телефон', 50, false),
     metro: text(value.metro, 'Орієнтир', 100, false), timeZone: value.timeZone,
@@ -312,11 +313,8 @@ export function quoteOrder(store, data) {
     if (product.availableSpiciness && !spiciness) fail('Невірний рівень гостроти');
     const size = product.sizes?.find(size => size.id === item.sizeId);
     if ((product.sizes?.length && !size) || (item.sizeId && !size)) fail('Розмір недоступний. Оберіть розмір ще раз', 409);
-    const toastingLevel = product.category === 'Шаурма' ? (item.toastingLevel ?? 'normal') : null;
-    if (product.category === 'Шаурма' && !['light', 'normal', 'strong'].includes(toastingLevel)) fail('Невірний варіант підсмаження лаваша');
-    if (item.toastingLevel != null && product.category !== 'Шаурма') fail('Підсмаження доступне лише для шаурми');
     const unitPrice = Math.round(((size?.price ?? product.price) + (lavash?.price || 0) + added.reduce((sum, mod) => sum + mod.price, 0)) * 100) / 100;
-    return { productId: product.id, name: size ? `${product.name} · ${size.name} (${size.weight})` : product.name, sizeId: size?.id || null, sizeName: size?.name || null, toastingLevel, toasting: toastingLevel === 'strong' ? 'Сильніше' : toastingLevel === 'light' ? 'Слабіше' : toastingLevel === 'normal' ? 'Звичайна піджарка' : null, weight: size?.weight || product.weight, qty: item.qty, unitPrice, lavash: lavash?.name || null, spiciness: spiciness?.label || null, added: added.map(mod => mod.name), removed: removed.map(mod => mod.name), comment: text(item.comment || '', 'Коментар', 1000, false) };
+    return { productId: product.id, name: size ? `${product.name} · ${size.name} (${size.weight})` : product.name, sizeId: size?.id || null, sizeName: size?.name || null, weight: size?.weight || product.weight, qty: item.qty, unitPrice, lavash: lavash?.name || null, spiciness: spiciness?.label || null, added: added.map(mod => mod.name), removed: removed.map(mod => mod.name), comment: text(item.comment || '', 'Коментар', 1000, false) };
   });
   const subtotal = Math.round(items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0) * 100) / 100;
   const code = String(data.promoCode || '').trim().toUpperCase();

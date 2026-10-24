@@ -13,7 +13,7 @@ import {
   Maximize2,
   Minimize2,
   PlusCircle,
-  Bike,
+  Pencil,
   UserCheck,
   Bell,
   ChefHat,
@@ -21,8 +21,9 @@ import {
   X
 } from 'lucide-react';
 import { kdsSound, requestScreenWakeLock, releaseScreenWakeLock } from './kdsSound';
-import { orderSync } from './utils/orderSync';
+import { orderSync, mediaUrl } from './utils/orderSync';
 import { formatTime, MINUTE } from './utils/timing';
+import ReadyTimeModal from './components/ReadyTimeModal';
 import ManualOrderModal from './components/ManualOrderModal';
 import OrderExtras from './components/OrderExtras';
 
@@ -42,6 +43,7 @@ export default function KitchenDisplayApp() {
   const [error, setError] = useState('');
   const [earlyAction, setEarlyAction] = useState(null);
   const [cancelOrderId, setCancelOrderId] = useState(null);
+  const [timeOrder, setTimeOrder] = useState(null);
   const [cancelComment, setCancelComment] = useState('');
 
   const applySnapshot = data => {
@@ -131,7 +133,7 @@ export default function KitchenDisplayApp() {
   const changeStatus = (orderId, status, confirmEarly = false) => {
     const order = orders.find(item => item.id === orderId);
     const action = () => orderSync.updateStatus(orderId, status, { confirmEarly });
-    action.early = { orderId, status, readyAt: order?.confirmedReadyAt, timeZone: order?.timeZone };
+    action.early = { orderId, status, readyAt: order?.confirmedReadyAt || order?.baselineReadyAt, timeZone: order?.timeZone };
     return runAction(action);
   };
 
@@ -140,7 +142,6 @@ export default function KitchenDisplayApp() {
     return changeStatus(orderId, currentStatus === 'new' ? 'cooking' : currentStatus === 'cooking' ? 'ready' : 'archived');
   };
 
-  const acceptOrder = (orderId, delayMinutes) => runAction(() => orderSync.acceptOrder(orderId, delayMinutes));
 
   // Toggle fullscreen mode (Kiosk)
   const toggleFullscreen = () => {
@@ -164,7 +165,7 @@ export default function KitchenDisplayApp() {
         {/* Left: Branding & Status */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
-            <img src="/brand/shaurmisha.jpg" alt="Логотип ШаурМіша" width="40" height="40" className="w-10 h-10 rounded-xl object-contain shrink-0" />
+            <img src={mediaUrl(menu?.point.logoUrl) || '/brand/shaurmisha.jpg'} alt="Логотип ШаурМіша" width="40" height="40" className="w-10 h-10 rounded-xl object-contain shrink-0" />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-none">
@@ -252,11 +253,12 @@ export default function KitchenDisplayApp() {
       {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
       {cancelOrderId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><form role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-lg space-y-5 rounded-2xl border border-zinc-700 bg-zinc-900 p-6" onSubmit={async event => { event.preventDefault(); if (await runAction(() => orderSync.cancelOrder(cancelOrderId, cancelComment.trim()))) setCancelOrderId(null); }}>
         <h2 id="cancel-title" className="text-xl font-semibold">Скасувати замовлення #{cancelOrderId}?</h2>
-        <p className="text-sm leading-6 text-zinc-400">Замовлення зникне з робочого екрана. Причина залишиться в історії.</p>
-        <label className="block text-sm text-zinc-300">Причина скасування<textarea autoFocus required maxLength={500} rows={3} value={cancelComment} disabled={busy} onChange={event => setCancelComment(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-white outline-none focus:border-orange-400" placeholder="Наприклад, закінчилася курка"/></label>
+        <p className="text-sm leading-6 text-zinc-400">Замовлення зникне з робочого екрана. Без коментаря клієнт не отримає повідомлення. Заповнений коментар надішлемо в Telegram.</p>
+        <label className="block text-sm text-zinc-300">Коментар (необов’язково)<textarea autoFocus maxLength={500} rows={3} value={cancelComment} disabled={busy} onChange={event => setCancelComment(event.target.value)} className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 p-3 text-white outline-none focus:border-orange-400" placeholder="Наприклад, закінчилася курка"/></label>
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-medium" onClick={() => { setCancelOrderId(null); setError(''); }}>Залишити замовлення</button><button disabled={busy || !cancelComment.trim()} className="rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold disabled:opacity-40">{busy ? 'Скасовуємо…' : 'Скасувати замовлення'}</button></div>
+        <div className="flex flex-wrap justify-end gap-3"><button type="button" disabled={busy} className="rounded-xl bg-zinc-800 px-4 py-3 text-sm font-medium" onClick={() => { setCancelOrderId(null); setError(''); }}>Залишити замовлення</button><button disabled={busy} className="rounded-xl bg-red-700 px-4 py-3 text-sm font-semibold disabled:opacity-40">{busy ? 'Скасовуємо…' : 'Скасувати замовлення'}</button></div>
       </form></div>}
+      {timeOrder && <ReadyTimeModal order={timeOrder} busy={busy} error={error} onClose={() => { setTimeOrder(null); setError(''); }} onSave={async readyAt => { if (await runAction(() => orderSync.changeReadyTime(timeOrder.id, readyAt, timeOrder.confirmedReadyAt || timeOrder.baselineReadyAt))) setTimeOrder(null); }}/>}
       {showManualOrder && <ManualOrderModal menu={menu} availability={availability} onClose={() => setShowManualOrder(false)} onCreated={order => { setOrders(previous => [order, ...previous.filter(item => item.id !== order.id)]); setShowManualOrder(false); }} />}
       {earlyAction && <div role="alertdialog" aria-modal="true" aria-labelledby="early-title" className="fixed inset-0 z-50 bg-red-950/95 flex items-center justify-center p-6">
         <div className="max-w-xl space-y-6 text-center">
@@ -299,7 +301,7 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onAccept={acceptOrder}
+                  onChangeTime={order => { setTimeOrder(order); setError(''); }}
                   onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
@@ -339,7 +341,7 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onAccept={acceptOrder}
+                  onChangeTime={order => { setTimeOrder(order); setError(''); }}
                   onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
@@ -379,7 +381,7 @@ export default function KitchenDisplayApp() {
                   order={order}
                   currentTime={currentTime}
                   onAdvance={advanceOrder}
-                  onAccept={acceptOrder}
+                  onChangeTime={order => { setTimeOrder(order); setError(''); }}
                   onNoShow={id => { if (window.confirm(`Клієнт не прийшов за замовленням #${id}? Замовлення буде закрито. Для клієнта Telegram усі подальші замовлення будуть доступні лише за передоплатою, без обмеження строку.`)) runAction(() => orderSync.noShow(id)); }}
                   onCancel={id => { setCancelOrderId(id); setCancelComment(''); setError(''); }}
                   busy={busy}
@@ -396,51 +398,45 @@ export default function KitchenDisplayApp() {
 }
 
 // Order cards use a compact type scale with emphasis on ID, deadline and dishes.
-function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, onNoShow, busy }) {
+function OrderCard({ order, currentTime, onAdvance, onChangeTime, onCancel, onNoShow, busy }) {
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
-  const isDelayed = remaining !== null && remaining < 0 && order.status !== 'ready';
-  const isCritical = remaining !== null && remaining <= -5 && order.status !== 'ready';
 
   return <article aria-label={`Замовлення ${order.id}`} className={`relative rounded-2xl border p-4 shadow-sm transition-colors ${
-    order.status === 'cooking' && isCritical ? 'border-red-500 bg-red-950/40' :
-    order.status === 'cooking' && isDelayed ? 'border-amber-500/60 bg-amber-950/20' :
     order.status === 'cooking' ? 'border-orange-500/40 bg-zinc-900' :
     order.status === 'ready' ? 'border-emerald-500/40 bg-zinc-900' : 'border-zinc-700/80 bg-zinc-900 hover:border-zinc-600'
   }`}>
-    <header className="mb-3 border-b border-zinc-800 pb-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 break-all text-[26px] font-semibold leading-none tracking-tight text-zinc-50 tabular-nums">#{order.id}</span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <div className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium tabular-nums ${isCritical ? 'border-red-500/40 bg-red-500/15 text-red-200' : isDelayed ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-zinc-700/70 bg-zinc-800/50 text-zinc-300'}`}>
-            {isDelayed ? <AlertTriangle size={14}/> : <Clock size={14}/>}
-            <span>{order.status === 'ready' ? 'Готово' : remaining === null ? 'Без часу' : remaining >= 0 ? `До видачі ${remaining} хв` : `Запізнення ${Math.abs(remaining)} хв`}</span>
-          </div>
-          {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"><X size={17}/></button>}
+    <header className="mb-4 border-b border-zinc-800 pb-4">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="break-all text-[22px] font-semibold leading-tight tracking-tight text-zinc-100 tabular-nums">#{order.id}</span>
+          {order.source === 'kitchen' && <span className="text-[11px] text-zinc-500">Вручну</span>}
         </div>
+        {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"><X size={17}/></button>}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[11px] leading-4">
-        <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-medium ${order.orderType === 'delivery' ? 'bg-sky-500/10 text-sky-300' : 'bg-emerald-500/10 text-emerald-300'}`}>
-          {order.orderType === 'delivery' ? <Bike size={13}/> : <UserCheck size={13}/>}{order.orderType === 'delivery' ? 'Доставка' : 'Самовивіз'}
-        </span>
-        {order.source === 'kitchen' && <span className="text-zinc-400">Створено вручну</span>}
-        <span className="ml-auto text-xs text-zinc-500 tabular-nums">{order.time}</span>
-      </div>
-      {order.phoneNumber && <a href={`tel:${order.phoneNumber.replace(/[^+0-9]/g, '')}`} className="mt-2 flex w-fit items-center gap-1.5 text-xs text-zinc-300"><Phone size={12}/>{order.phoneNumber}</a>}
-    </header>
 
-    {readyAt && <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
-      <div className="min-w-0"><p className="text-xs leading-5 text-zinc-400">{order.acceptedAt ? 'Підтверджена видача' : order.timingMode === 'scheduled' ? 'На точний час' : 'Попередній час видачі'}</p>
-        {!!order.kitchenDelayMinutes && <p className="text-[11px] text-amber-300/90">Зсув +{order.kitchenDelayMinutes} хв</p>}
+      <div className="mt-4 flex items-start justify-between gap-4">
+        {readyAt && <button type="button" disabled={busy} onClick={() => onChangeTime(order)} aria-label={`Змінити час видачі замовлення #${order.id}`} className="group -ml-1 min-w-0 rounded-lg px-1 text-left outline-offset-4 transition-colors hover:bg-zinc-800/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400 disabled:opacity-50">
+          <span className="block text-[11px] leading-5 text-zinc-500">{order.acceptedAt ? 'Час видачі' : 'Попередня видача'}</span>
+          <span className="flex items-center gap-2 text-[36px] font-semibold leading-[1.2] tracking-tight text-orange-200 tabular-nums">{formatTime(readyAt, order.timeZone)}<Pencil size={15} className="shrink-0 text-zinc-600 transition-colors group-hover:text-orange-300"/></span>
+          {new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(readyAt) !== new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(currentTime) && <span className="mt-1 block text-xs text-zinc-400">{new Intl.DateTimeFormat('uk-UA', { timeZone: order.timeZone, day: 'numeric', month: 'long' }).format(readyAt)}</span>}
+        </button>}
+        {remaining > 0 && <div aria-label={`До видачі ${remaining} хв`} className="shrink-0 text-right">
+          <p className="text-[11px] leading-5 text-zinc-500">Залишилось</p>
+          <p className="pt-1 text-[24px] font-medium leading-tight tracking-tight text-zinc-300 tabular-nums">{remaining}<span className="ml-1 text-xs font-normal tracking-normal text-zinc-500">хв</span></p>
+        </div>}
       </div>
-      <p className="shrink-0 text-[28px] font-semibold leading-tight tracking-tight text-orange-200 tabular-nums">{formatTime(readyAt, order.timeZone)}</p>
-    </div>}
+
+      <div className="mt-4 flex items-start justify-between gap-3 text-xs leading-5">
+        <span className="min-w-0 break-words text-zinc-400">{order.customerName || 'Клієнт'}</span>
+        {order.phoneNumber && <a href={`tel:${order.phoneNumber.replace(/[^+0-9]/g, '')}`} className="flex shrink-0 items-center gap-1.5 text-zinc-400 transition-colors hover:text-zinc-100"><Phone size={12}/>{order.phoneNumber}</a>}
+      </div>
+    </header>
 
     <div className="space-y-3">
       {order.items.map((item, index) => {
         const suffix = item.sizeName && item.weight ? ` · ${item.sizeName} (${item.weight})` : '';
         const title = suffix && item.name.endsWith(suffix) ? item.name.slice(0, -suffix.length) : item.name;
-        const toasting = item.toastingLevel === 'normal' ? 'Звичайна' : item.toasting;
         return <div key={index} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3">
           <div className="flex items-start gap-2.5">
             <span className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-lg border border-zinc-700/60 bg-zinc-800/70 px-1.5 text-base font-semibold leading-none text-zinc-100 tabular-nums">{item.qty}<span className="ml-0.5 text-xs font-normal text-zinc-500">×</span></span>
@@ -448,7 +444,6 @@ function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, onNoShow
               {item.sizeName && <p className="mt-0.5 text-[13px] leading-5 text-zinc-400">{item.sizeName}{item.weight ? ` · ${item.weight}` : ''}</p>}
             </div>
           </div>
-          {toasting && <div className={`mt-2.5 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs leading-4 ${item.toastingLevel === 'strong' ? 'bg-orange-500/10 text-orange-200' : 'bg-zinc-800/50 text-zinc-300'}`}><Flame size={13} className="shrink-0 opacity-70"/><span className="text-zinc-400">Піджарка:</span><span className="font-medium">{toasting.toLowerCase()}</span></div>}
           {(item.lavash || item.spiciness) && <div className="mt-2 flex flex-wrap gap-1.5">
             {item.lavash && <span className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-orange-200">{item.lavash}</span>}
             {item.spiciness && <span className="rounded-md bg-red-500/10 px-2 py-1 text-xs text-red-300">{item.spiciness}</span>}
@@ -462,10 +457,7 @@ function OrderCard({ order, currentTime, onAdvance, onAccept, onCancel, onNoShow
 
     <OrderExtras order={order}/>
     <div className="mt-3 border-t border-zinc-800 pt-3">
-      {order.status === 'new' && !order.acceptedAt ? <div>
-        <p className="mb-2 text-xs text-zinc-400">Підтвердьте час видачі:</p>
-        <div className="grid grid-cols-2 gap-2">{[0, 5, 10, 15].map(delay => <button key={delay} disabled={busy} onClick={() => onAccept(order.id, delay)} className={`min-h-[60px] rounded-xl px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${delay === 0 ? 'bg-emerald-700 hover:bg-emerald-600' : delay <= 10 ? 'bg-amber-600 hover:bg-amber-500' : 'bg-red-700 hover:bg-red-600'}`}><span className="block opacity-90">{delay === 0 ? 'Без змін' : `+${delay} хв`}</span><span className="mt-0.5 block text-lg font-semibold tabular-nums">{formatTime(order.baselineReadyAt + delay * MINUTE, order.timeZone)}</span></button>)}</div>
-      </div> : <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>}
+      <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>
       {order.status === 'ready' && order.paymentStatus === 'cash_due' && <button type="button" disabled={busy} onClick={() => onNoShow(order.id)} className="mt-3 min-h-[40px] w-full rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Клієнт не прийшов</button>}
     </div>
   </article>;

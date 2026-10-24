@@ -8,7 +8,8 @@ import {
   ShieldCheck,
   Check,
   CreditCard,
-  Banknote
+  Banknote,
+  UtensilsCrossed
 } from 'lucide-react';
 import { LIMITS, maxAdditional } from '../utils/orderPolicy';
 import { tg } from '../utils/telegram';
@@ -30,7 +31,7 @@ export default function CheckoutView({
   const deliveryType = 'pickup';
   const selectedLocation = point ? { id: point.id, name: point.address, metro: point.metro } : null;
   const [phoneNumber, setPhoneNumber] = useState(profile?.phoneNumber || '');
-  const [napkins, setNapkins] = useState(true);
+  const [cutlery, setCutlery] = useState(true);
   const paymentMethod = 'cash';
 
   const [timingMode, setTimingMode] = useState('asap');
@@ -92,7 +93,7 @@ export default function CheckoutView({
       if (timingMode === 'scheduled') setRequestedReadyAt(String(timing.baselineReadyAt));
       await onPlaceOrder({
         cart, subtotal, discount, deliveryFee, finalTotal, deliveryType,
-        selectedLocation, phoneNumber: phoneNumber.trim(), napkins, paymentMethod, notificationsEnabled,
+        selectedLocation, phoneNumber: phoneNumber.trim(), cutlery, paymentMethod, notificationsEnabled,
         timingMode, requestedReadyAt: timing.requestedReadyAt,
       });
     } catch (error) {
@@ -152,7 +153,6 @@ export default function CheckoutView({
                   <h4 className="font-bold text-white text-sm leading-tight">
                     {item.product.name}
                     {item.size && <span className="block text-xs text-zinc-400 mt-1">{item.size.name} · {item.size.weight}</span>}
-                    {item.toastingLevel && <span className="block text-xs text-orange-300 mt-1">Підсмажити лаваш: {item.toastingLevel === 'strong' ? 'сильніше' : item.toastingLevel === 'light' ? 'слабіше' : 'звичайна піджарка'}</span>}
                   {item.unavailableReason && <span className="block text-xs text-red-300">{item.unavailableReason}</span>}
                   </h4>
                   <div className="text-xs text-zinc-400 mt-0.5">
@@ -315,9 +315,9 @@ export default function CheckoutView({
       </section>
 
       <div className="bg-zinc-900 rounded-2xl p-3 border border-zinc-800/80 flex items-center justify-between">
-        <div><span className="text-sm font-semibold text-white block">Додати серветки</span><span className="text-xs text-zinc-400">До вашого замовлення</span></div>
-        <button type="button" role="switch" aria-label="Додати серветки" aria-checked={napkins} onClick={() => { tg.haptic.selection(); setNapkins(!napkins); }} className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${napkins ? 'bg-orange-500' : 'bg-zinc-800'}`}>
-          <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${napkins ? 'translate-x-5' : 'translate-x-0'}`} />
+        <div className="flex items-center gap-3"><UtensilsCrossed size={20} className="text-zinc-400"/><div><span className="text-sm font-semibold text-white block">Додати прибори</span><span className="text-xs text-zinc-400">До вашого замовлення</span></div></div>
+        <button type="button" role="switch" aria-label="Додати прибори" aria-checked={cutlery} onClick={() => { tg.haptic.selection(); setCutlery(!cutlery); }} className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${cutlery ? 'bg-orange-500' : 'bg-zinc-800'}`}>
+          <span className={`block w-5 h-5 rounded-full bg-white transition-transform ${cutlery ? 'translate-x-5' : 'translate-x-0'}`} />
         </button>
       </div>
 

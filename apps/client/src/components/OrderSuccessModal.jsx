@@ -32,7 +32,7 @@ export default function OrderSuccessModal({ order, onReset, telegramNotification
       <div className="bg-zinc-900 rounded-3xl p-5 border border-zinc-800 space-y-5 text-center">
         <CheckCircle2 size={44} className="mx-auto text-emerald-400" />
         <h2 className="text-2xl font-bold tracking-tight">Замовлення #{order.id} оформлено</h2>
-        <p className="text-sm text-zinc-400">Кухня підтвердить час видачі. Оплата при отриманні.</p>
+        <p className="text-sm text-zinc-400">Кухня отримала замовлення. Оплата при отриманні.</p>
         <div className="bg-zinc-950 rounded-2xl p-4 border border-zinc-800">
           <p className="text-xs text-zinc-400 flex justify-center gap-2 items-center"><Clock size={14} /> Попередній час готовності</p>
           <p className="text-4xl font-semibold tracking-tight text-orange-400 my-2">{readyAt ? formatTime(readyAt, order.timeZone) : 'Уточнюємо'}</p>
@@ -42,7 +42,6 @@ export default function OrderSuccessModal({ order, onReset, telegramNotification
           {order.items?.map((item, index) => <li key={index} className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
             <span className="shrink-0 rounded-lg bg-zinc-800 px-2 py-1 text-sm font-bold">{item.qty} ×</span>
             <div><p className="text-sm font-semibold leading-relaxed">{item.name}</p>
-              {item.toasting && <p className="mt-1 text-xs text-orange-300">Лаваш: {item.toasting.toLowerCase()}</p>}
             </div>
           </li>)}
         </ul>

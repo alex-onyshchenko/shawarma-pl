@@ -78,19 +78,39 @@ test('queue writes roll back with the order transaction', () => {
   } finally { db.close(); }
 });
 
-test('cancellation suppresses queued messages without sending its reason', async () => {
+test('blank cancellation suppresses queued statuses; a comment sends once and survives restart', async () => {
   const db = new DatabaseSync(':memory:'); const sent = [];
+  const options = { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } };
   try {
-    const queue = createNotifications(db, { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } });
+    let queue = createNotifications(db, options);
     queue.enqueue(order, 'placed'); queue.enqueue(order, 'confirmed');
-    const cancelled = { ...order, cancellationComment: 'Закінчилася курка' };
-    queue.enqueue(cancelled, 'cancelled'); queue.enqueue(cancelled, 'cancelled');
-    await queue.tick(); await queue.tick();
+    queue.enqueue({ ...order, cancellationComment: '   ' }, 'cancelled');
+    await queue.tick();
     assert.equal(sent.length, 0);
-    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM telegram_outbox WHERE state='cancelled'").get().n, 2);
-    db.prepare("INSERT INTO telegram_outbox(order_key,kind,chat_id,text) VALUES('legacy','cancelled',12345,'Old cancellation message')").run();
-    const restarted = createNotifications(db, { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } });
-    await restarted.tick();
-    assert.equal(sent.length, 0, 'previously queued cancellation notices are suppressed after restart');
+    const other = { ...order, id: '1002', cancellationComment: 'Закінчилася курка' };
+    queue.enqueue(other, 'placed');
+    queue.enqueue(other, 'cancelled'); queue.enqueue(other, 'cancelled');
+    queue = createNotifications(db, options);
+    await queue.tick(); await queue.tick();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text, /Закінчилася курка/);
+    queue.enqueue(other, 'cancelled'); await queue.tick();
+    assert.equal(sent.length, 1);
+  } finally { db.close(); }
+});
+
+test('each distinct time revision sends a message, retrying a revision does not', async () => {
+  const db = new DatabaseSync(':memory:'); const sent = [];
+  const options = { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } };
+  try {
+    let queue = createNotifications(db, options);
+    queue.enqueue(order, 'time_changed:1');
+    queue.enqueue(order, 'time_changed:1');
+    queue.enqueue({ ...order, confirmedReadyAt: order.confirmedReadyAt + 60000 }, 'time_changed:2');
+    queue = createNotifications(db, options);
+    await queue.tick(); await queue.tick(); await queue.tick();
+    assert.equal(sent.length, 2);
+    assert.match(sent[0].text, /12:15/);
+    assert.match(sent[1].text, /12:16/);
   } finally { db.close(); }
 });

@@ -51,7 +51,7 @@ export function normalizeTiming({ timingMode = 'asap', requestedReadyAt }, now, 
 }
 
 export function earlyStart(order, now) {
-  return order.timingMode === 'scheduled' && order.confirmedReadyAt - now > 20 * MINUTE;
+  return order.timingMode === 'scheduled' && (order.confirmedReadyAt || order.baselineReadyAt) - now > 20 * MINUTE;
 }
 
 // Staff can schedule over the next 24 hours independently of opening hours.

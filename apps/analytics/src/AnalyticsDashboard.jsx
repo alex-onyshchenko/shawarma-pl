@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
   TrendingUp, ShoppingBag, Banknote, Clock,
@@ -301,9 +301,10 @@ export default function AnalyticsDashboard() {
                           ))}
                         </Pie>
                         <Tooltip formatter={(v, name) => [`${fmt(v)} шт`, name]} contentStyle={{ background: '#27272a', border: '1px solid #3f3f46', borderRadius: 12 }} />
-                        <Legend formatter={v => <span className="text-zinc-300 text-xs">{v}</span>} />
+
                       </PieChart>
                     </ResponsiveContainer>
+                    <ul aria-label="Легенда частки продажів" className="mt-8 flex flex-wrap justify-center gap-x-5 gap-y-3 px-2 pb-2">{data.topProducts.slice(0, 7).map((product, index) => <li key={product.name} className="flex items-center gap-2 text-xs leading-5 text-zinc-300"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}/>{product.name}</li>)}</ul>
                   </div>
 
                   {/* Bar chart — revenue per product */}

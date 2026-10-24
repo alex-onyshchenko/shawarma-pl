@@ -296,7 +296,7 @@ function MenuApp({ profile, onProfileChange }) {
 
   return (
     <div className="app-shell bg-zinc-950 text-white font-sans selection:bg-orange-500 selection:text-white">
-      <div className={`app-content w-full mx-auto relative flex flex-col ${view === 'order-status' ? 'max-w-none' : 'max-w-2xl'}`}>
+      <div className={`app-content w-full mx-auto relative flex flex-col ${view === 'menu' ? 'max-w-2xl' : 'max-w-none'}`}>
         {/* Telegram Header */}
         <TelegramHeader
           pointName={menu?.point.name}

@@ -125,7 +125,7 @@ export default function CheckoutView({
   }
 
   return (
-    <div className="w-full min-w-0 px-2 pt-4 pb-28 space-y-4 animate-fade-in">
+    <div className="w-full min-w-0 px-4 pt-4 pb-28 space-y-4 animate-fade-in">
       {/* Title */}
       <div className="flex items-center justify-between">
         <div>
@@ -365,7 +365,7 @@ export default function CheckoutView({
       {hasUnavailableItems && <p role="alert" className="text-sm text-red-300">Деякі позиції недоступні. Видаліть їх або оберіть склад заново.</p>}
       {submitError && <p role="alert" className="rounded-xl border border-red-700 bg-red-950 p-3 text-sm text-red-200">{submitError}</p>}
       {/* Sticky Native-like Telegram MainButton */}
-      <div className="fixed bottom-0 left-0 right-0 safe-bottom px-2 pt-3 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800/80 z-30">
+      <div className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto safe-bottom px-4 pt-3 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800/80 z-30">
         <button
           onClick={handleSubmitOrder}
           disabled={isSubmitting || !canSubmit || prepaymentRequired}

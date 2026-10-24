@@ -4,7 +4,7 @@ import { Coffee } from 'lucide-react';
 
 export function closedDescription(availability) {
   return availability?.point?.acceptingOrders === false
-    ? 'Сьогодні вже не працюємо.'
+    ? 'Сьогодні не працюємо'
     : 'Робочий час закінчився. Приходьте завтра.';
 }
 

@@ -50,7 +50,7 @@ test('client reads only public menu/availability; tracking opens the bot without
     const scheduled = { cafeOpen: false, withinWorkingHours: false, closed: false, openMinute: 600, timeZone: 'Europe/Kyiv', serverNow: Date.parse('2026-10-24T22:00:00+03:00'), point: { acceptingOrders: true, weeklyHours: workingWeek, exceptions: [] } };
     const statusHtml = value => renderToStaticMarkup(React.createElement(CafeStatus, { availability: value }));
     assert.ok(statusHtml(scheduled).includes('Робочий час закінчився. Приходьте завтра.'));
-    assert.ok(statusHtml({ ...scheduled, point: { ...scheduled.point, acceptingOrders: false } }).includes('Сьогодні вже не працюємо.</p>'));
+    assert.ok(statusHtml({ ...scheduled, point: { ...scheduled.point, acceptingOrders: false } }).includes('Сьогодні не працюємо</p>'));
     assert.ok(statusHtml({ ...scheduled, serverNow: Date.parse('2026-10-24T09:00:00+03:00') }).includes('Робочий час закінчився. Приходьте завтра.'));
     const holidayTomorrow = { ...scheduled, point: { ...scheduled.point, exceptions: [{ date: '2026-10-25', closed: true }] } };
     assert.ok(statusHtml(holidayTomorrow).includes('Робочий час закінчився. Приходьте завтра.'));

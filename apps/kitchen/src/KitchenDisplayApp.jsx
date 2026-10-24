@@ -409,7 +409,6 @@ export default function KitchenDisplayApp() {
 function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCancel, onNoShow, busy }) {
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
-  const longWait = remaining > 8 * 60;
 
   return <article aria-label={`Замовлення ${order.id}`} className={`relative rounded-3xl border p-4 shadow-[0_8px_28px_rgba(0,0,0,0.18)] transition-colors ${
     order.status === 'cooking' ? 'border-orange-500/30 bg-[#101011]' :
@@ -428,17 +427,17 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
         </div>
       </div>
 
-      <div className="mt-5 flex items-stretch justify-between gap-3">
+      {order.status !== 'ready' && <div className="mt-5 flex items-stretch justify-between gap-3">
         {readyAt && <ReadyTimeLabel order={order} readyAt={readyAt} currentTime={currentTime} busy={busy} onChangeTime={onChangeTime}>
           <span className="block text-xs leading-5 text-zinc-400">{order.acceptedAt ? 'Час видачі' : 'Попередня видача'}</span>
           <span className="flex items-center gap-2 text-[40px] font-bold leading-[1.2] tracking-tight text-[#f3d29b] tabular-nums">{formatTime(readyAt, order.timeZone)}{order.status === 'new' && <Pencil size={18} className="shrink-0 text-zinc-500 transition-colors group-hover:text-orange-300"/>}</span>
           {new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(readyAt) !== new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(currentTime) && <span className="mt-1 block text-xs text-zinc-400">{new Intl.DateTimeFormat('uk-UA', { timeZone: order.timeZone, day: 'numeric', month: 'long' }).format(readyAt)}</span>}
         </ReadyTimeLabel>}
-        {remaining > 0 && <div aria-label={longWait ? 'До видачі понад 8 годин' : `До видачі ${remaining} хв`} className="flex shrink-0 flex-col items-end justify-center border-l border-zinc-800 pl-3 text-right">
+        {remaining > 0 && remaining <= 8 * 60 && <div aria-label={`До видачі ${remaining} хв`} className="flex shrink-0 flex-col items-end justify-center border-l border-zinc-800 pl-3 text-right">
           <p className="mb-1 text-xs leading-5 text-zinc-400">Залишилось</p>
-          <p className="inline-flex items-center gap-1.5 rounded-xl bg-orange-400 px-2.5 py-1.5 text-[26px] font-bold leading-tight tracking-tight text-zinc-950 tabular-nums"><span className="sr-only">{longWait ? 'Понад 8 годин' : ''}</span>{longWait ? <span className="px-3 text-[32px] leading-none" aria-hidden="true">∞</span> : <><Hourglass size={20} strokeWidth={2.2}/>{remaining}<span className="text-sm font-semibold tracking-normal">хв</span></>}</p>
+          <p className="inline-flex items-center gap-1.5 rounded-xl bg-orange-400 px-2.5 py-1.5 text-[26px] font-bold leading-tight tracking-tight text-zinc-950 tabular-nums"><Hourglass size={20} strokeWidth={2.2}/>{remaining}<span className="text-sm font-semibold tracking-normal">хв</span></p>
         </div>}
-      </div>
+      </div>}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl border border-zinc-700/60 bg-zinc-800/70 px-3 py-2 text-[13px] leading-5">
         <span className="min-w-0 break-words text-zinc-200">{order.customerName || 'Клієнт'}</span>

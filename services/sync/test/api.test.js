@@ -503,7 +503,7 @@ test('starting preparation implicitly confirms the displayed deadline', async ()
 });
 
 
-test('orders can be cancelled from every active column, but not after being issued', async () => {
+test('cancellation requires the new column; cooking and ready can return one column with their deadline intact', async () => {
   for (const status of ['new', 'cooking', 'ready', 'archived']) {
     const created = await request('/api/orders', 'POST', { items: [item] });
     assert.equal(created.status, 201);
@@ -514,6 +514,21 @@ test('orders can be cancelled from every active column, but not after being issu
     if (status === 'archived') assert.equal((await request(path + '/status', 'PATCH', { status: 'archived' })).status, 200);
     const result = await request(path + '/cancel', 'POST', { comment: status === 'cooking' ? 'Закінчилися інгредієнти' : '' });
     if (status === 'archived') { assert.equal(result.status, 404); continue; }
+    if (['cooking', 'ready'].includes(status)) {
+      assert.equal(result.status, 409);
+      let back = await request(path + '/status', 'PATCH', { status: status === 'ready' ? 'cooking' : 'new' });
+      assert.equal(back.status, 200);
+      assert.equal(back.data.order.confirmedReadyAt, created.data.order.baselineReadyAt);
+      if (status === 'ready') {
+        assert.equal(back.data.order.status, 'cooking');
+        assert.equal((await request(path + '/cancel', 'POST', {})).status, 409);
+        back = await request(path + '/status', 'PATCH', { status: 'new' });
+        assert.equal(back.status, 200);
+      }
+      assert.equal(back.data.order.status, 'new');
+      const cancelled = await request(path + '/cancel', 'POST', { comment: status === 'cooking' ? 'Закінчилися інгредієнти' : '' });
+      Object.assign(result, cancelled);
+    }
     assert.equal(result.status, 200);
     assert.equal(result.data.order.status, 'cancelled');
     assert.equal(result.data.order.cancellationComment, status === 'cooking' ? 'Закінчилися інгредієнти' : '');

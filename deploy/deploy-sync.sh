@@ -30,7 +30,7 @@ echo "Checking $target (Docker, Compose, Python and curl)..."
 "${ssh_cmd[@]}" "set -eu; docker info >/dev/null; docker compose version; command -v python3 >/dev/null; command -v curl >/dev/null; mkdir -p '$deploy_dir'"
 echo 'Uploading source and configuration (no local env or database)...'
 cd "$repo_dir"
-files=(services/sync/*.js services/sync/package.json services/sync/package-lock.json
+files=(services/sync/*.js services/sync/fonts services/sync/package.json services/sync/package-lock.json
   services/sync/Dockerfile services/sync/.dockerignore deploy/sync/compose.yaml
   deploy/sync/Caddyfile deploy/sync/.env.prod.example deploy/sync/README.md
   apps/admin/package.json apps/admin/package-lock.json apps/admin/Dockerfile

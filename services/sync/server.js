@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { salesReport, reportPdf } from './reports.js';
 import { dirname, join } from 'node:path';
 import { createMedia } from './media.js';
 import { telegramUser, trackingHash, ownsOrder, publicJson } from './telegram.js';
@@ -373,6 +374,7 @@ const server = http.createServer(async (req, res) => {
         const completed = {
           ...order,
           status: 'archived',
+          issuedAt: Date.now(),
           notification: '✅ Замовлення видано. Смачного!',
           completedAt: new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })
         };
@@ -408,6 +410,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 6. GET /api/analytics - analytics data
+  if (pathname === '/api/analytics/report' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    try {
+      const format = url.searchParams.get('format') || 'json';
+      if (!['json', 'pdf'].includes(format)) throw Object.assign(new Error('Невідомий формат звіту'), { status: 400 });
+      const report = salesReport(archivedOrders, store.activePoint(), {
+        period: url.searchParams.get('period') ?? '7', commission: url.searchParams.get('commission') ?? '0',
+      });
+      if (format === 'pdf') {
+        const pdf = await reportPdf(report);
+        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="shaurmisha-sales-${report.period}d-${new Date(report.to).toISOString().slice(0, 10)}.pdf"`, 'Content-Length': pdf.length });
+        res.end(pdf);
+      } else json(res, 200, report);
+    } catch (error) { json(res, error.status || 500, { error: error.status ? error.message : 'Не вдалося сформувати звіт' }); }
+    return;
+  }
+
   if (pathname === '/api/analytics' && req.method === 'GET') {
     const allOrders = [...orders, ...archivedOrders].filter(order => order.status !== 'cancelled');
     const now = Date.now();

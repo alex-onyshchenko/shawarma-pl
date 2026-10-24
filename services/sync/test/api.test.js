@@ -409,6 +409,25 @@ test('schedule exceptions close ordering; minute-level schedules and modifier ed
 });
 
 
+test('sales report exposes full issued-order statement and downloadable PDF; invalid filters fail', async () => {
+  const history = (await request('/api/orders')).data.archivedOrders;
+  const response = await request('/api/analytics/report?period=7&commission=5.25');
+  assert.equal(response.status, 200);
+  assert.equal(response.data.count, history.filter(order => order.status === 'archived').length);
+  assert.ok(response.data.sales.every(sale => Number.isFinite(sale.soldAt)));
+  assert.equal(response.data.totals.amountKopecks, response.data.sales.reduce((sum, sale) => sum + sale.amountKopecks, 0));
+  assert.equal(response.data.totals.commissionKopecks, response.data.sales.reduce((sum, sale) => sum + sale.commissionKopecks, 0));
+  const pdf = await fetch(`${base}/api/analytics/report?period=21&commission=0&format=pdf`);
+  assert.equal(pdf.status, 200);
+  assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+  assert.equal(pdf.headers.get('cache-control'), 'no-store');
+  assert.match(pdf.headers.get('content-disposition'), /attachment; filename="shaurmisha-sales-21d-/);
+  assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+  for (const query of ['period=22', 'commission=-1', 'commission=100.01', 'format=html']) {
+    assert.equal((await request('/api/analytics/report?' + query)).status, 400);
+  }
+});
+
 test('clear removes active and archived orders instead of generating demo history', async () => {
   assert.ok((await request('/api/orders')).data.orders.length > 0);
   assert.equal((await request('/api/reset', 'POST', {})).status, 200);

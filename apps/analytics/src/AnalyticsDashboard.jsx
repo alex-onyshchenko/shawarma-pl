@@ -5,8 +5,10 @@ import {
 } from 'recharts';
 import {
   TrendingUp, ShoppingBag, Banknote, Clock,
-  BarChart2, Package, ListOrdered, RefreshCw
+  BarChart2, Package, ListOrdered, RefreshCw, FileText
 } from 'lucide-react';
+
+import SalesReport from './SalesReport';
 
 const API_BASE = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/+$/, '');
 
@@ -91,6 +93,7 @@ export default function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [period, setPeriod] = useState('week');
+  const [reportVersion, setReportVersion] = useState(0);
   const [activeTab, setActiveTab] = useState('overview'); // overview | products | orders
 
   async function fetchAnalytics() {
@@ -129,7 +132,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
         <button
-          onClick={fetchAnalytics}
+          onClick={() => { fetchAnalytics(); setReportVersion(value => value + 1); }}
           disabled={loading}
           className="flex items-center gap-2 text-sm text-orange-500 hover:text-orange-400 transition-colors px-3 py-1.5 rounded-lg hover:bg-zinc-800 disabled:opacity-50"
         >
@@ -139,16 +142,17 @@ export default function AnalyticsDashboard() {
       </header>
 
       {/* Nav tabs */}
-      <nav className="flex gap-1 px-6 pt-4 pb-0">
+      <nav className="flex gap-1 overflow-x-auto px-4 sm:px-6 pt-4 pb-0" aria-label="Розділи аналітики">
         {[
           { id: 'overview', icon: BarChart2, label: 'Огляд' },
           { id: 'products', icon: Package,   label: 'Продукти' },
           { id: 'orders',   icon: ListOrdered, label: 'Замовлення' },
+          { id: 'report', icon: FileText, label: 'Звіт' },
         ].map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            className={`flex shrink-0 items-center gap-1.5 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
               activeTab === id
                 ? 'bg-zinc-900 text-orange-500 border-t border-l border-r border-zinc-800'
                 : 'text-zinc-500 hover:text-zinc-300'
@@ -160,7 +164,8 @@ export default function AnalyticsDashboard() {
         ))}
       </nav>
 
-      <main className="px-6 py-6 space-y-8">
+      <main className="px-4 sm:px-6 py-6 space-y-8">
+        {activeTab === 'report' && <SalesReport key={reportVersion}/>}
         {/* Error */}
         {error && (
           <div className="bg-red-900/30 border border-red-800 rounded-xl p-4 text-red-400 text-sm">

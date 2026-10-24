@@ -16,7 +16,7 @@ import {
   Pencil,
   Hourglass,
   Play,
-  ArrowLeft,
+  Undo2,
   UserCheck,
   Bell,
   ChefHat,
@@ -418,6 +418,7 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
           {order.source === 'kitchen' && <span className="text-[11px] text-zinc-500">Вручну</span>}
         </div>
         {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 transition-colors hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40"><X size={21}/></button>}
+        {['cooking', 'ready'].includes(order.status) && <button type="button" disabled={busy} onClick={() => onReturn(order.id, order.status)} aria-label={`${order.status === 'cooking' ? 'Повернути до нових' : 'Повернути до приготування'}: замовлення #${order.id}`} title={order.status === 'cooking' ? 'Повернути до нових' : 'Повернути до приготування'} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-40"><Undo2 size={21}/></button>}
       </div>
 
       <div className="mt-5 flex items-stretch justify-between gap-3">
@@ -462,7 +463,6 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
 
     <div className="mt-4">
       <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-bold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'border-blue-400/60 bg-blue-600 shadow-[0_4px_18px_rgba(37,99,235,0.25)] hover:bg-blue-500' : order.status === 'cooking' ? 'border-orange-300/40 bg-orange-500 hover:bg-orange-400' : 'border-emerald-400/40 bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' && <Play size={17} fill="currentColor"/>}{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>
-      {['cooking', 'ready'].includes(order.status) && <button type="button" disabled={busy} onClick={() => onReturn(order.id, order.status)} className="mt-2 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"><ArrowLeft size={14}/>{order.status === 'cooking' ? 'Повернути до нових' : 'Повернути до приготування'}</button>}
       {order.status === 'ready' && order.paymentStatus === 'cash_due' && <button type="button" disabled={busy} onClick={() => onNoShow(order.id)} className="mt-3 min-h-[40px] w-full rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Клієнт не прийшов</button>}
     </div>
   </article>;

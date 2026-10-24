@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { getConfig, httpsUrl } from './config.js';
 import { telegramRequest } from './telegram.js';
 
@@ -20,6 +21,7 @@ export async function registerWebhook(env = process.env, fetcher = fetch) {
   } catch { throw new Error('Deployment check failed; verify BOT_PUBLIC_URL, deployed env and webhook access'); }
   await telegramRequest(env.TELEGRAM_BOT_TOKEN, 'setWebhook', {
     url: webhookUrl, allowed_updates: ['message'], drop_pending_updates: false,
+    secret_token: createHmac('sha256', env.TELEGRAM_BOT_TOKEN).update('shaurmisha-contact-webhook-v1').digest('hex'),
   }, fetcher);
   return { username: config.username, webhookUrl };
 }

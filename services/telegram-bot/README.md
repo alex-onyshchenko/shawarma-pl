@@ -89,3 +89,16 @@ Webhook приймає POST JSON до 64 KiB без авторизації та 
 Відповідь — Telegram Bot API `sendMessage` у тілі webhook, без окремого мережевого виклику. Звичайний сторонній POST отримує JSON-відповідь і сам по собі не надсилає повідомлення в Telegram. Цей endpoint лише формує публічне привітання; він не використовується для замовлень, оплат чи персональних даних. Telegram не повертає результат такого `sendMessage`, тому для перевірки доставки треба натиснути `/start` у реальному чаті. Сервіс не зберігає `update_id`; при повторній доставці update можливе повторне привітання. Персональні дані та замовлення не зберігаються.
 
 Джерела: [Telegram webhook responses](https://core.telegram.org/bots/api#making-requests-when-getting-updates), [setWebhook](https://core.telegram.org/bots/api#setwebhook), [Vercel Node.js Functions](https://vercel.com/docs/functions/runtimes/node-js).
+
+## Підтвердження номера
+
+Для Production додайте `SYNC_API_URL` (публічний HTTPS origin Sync). Бот
+передає лише контакт самого користувача з приватного чату в
+`POST /api/telegram/contact`. Усі записи контактів перевіряє Sync за
+Telegram webhook secret, який автоматично виводиться HMAC-SHA256 з наявного
+токена бота (`shaurmisha-contact-webhook-v1`). `registerWebhook` тепер
+передає цей secret у `setWebhook`; вручну створювати чи зберігати його у
+Vercel не потрібно. Токен залишається приватним. Для вже налаштованого бота
+після оновлення необхідно один раз повторно зареєструвати webhook.
+Команди /start і /help продовжують працювати без Sync; якщо контакт не
+збережено, бот відповідає помилкою, щоб Telegram повторив доставку.

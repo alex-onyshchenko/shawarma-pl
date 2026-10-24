@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -59,7 +60,7 @@ test('configuration requires a public HTTPS Mini App URL without a webhook secre
   assert.equal(getConfig({ ...env, TELEGRAM_BOT_USERNAME: '@shaurmisha_pl_bot' }).username, env.TELEGRAM_BOT_USERNAME);
 });
 
-test('registration checks identity and deployment then registers without a secret', async () => {
+test('registration derives the contact webhook secret from the existing bot token', async () => {
   const calls = [];
   const fakeFetch = async (url, options = {}) => {
     const path = new URL(url).pathname;
@@ -74,7 +75,7 @@ test('registration checks identity and deployment then registers without a secre
   const result = await registerWebhook(env, fakeFetch);
   assert.equal(result.webhookUrl, 'https://bot.example.com/api/webhook');
   assert.equal(calls.length, 4);
-  assert.deepEqual(calls[3].body, { url: result.webhookUrl, allowed_updates: ['message'], drop_pending_updates: false });
+  assert.deepEqual(calls[3].body, { url: result.webhookUrl, allowed_updates: ['message'], drop_pending_updates: false, secret_token: createHmac('sha256', env.TELEGRAM_BOT_TOKEN).update('shaurmisha-contact-webhook-v1').digest('hex') });
   assert.deepEqual(calls[2].body, { update_id: 0 });
   let mutated = false;
   await assert.rejects(registerWebhook(env, async url => {
@@ -116,4 +117,26 @@ test('standalone HTTP server exposes the same health and public webhook without 
   } finally {
     if (child.exitCode === null) { child.kill(); await once(child, 'exit'); }
   }
+});
+
+test('self-contact is forwarded with the Telegram secret, foreign contacts ignored, sync failures retried', async () => {
+  let calls = 0;
+  const contactUpdate = { update_id: 7, message: { date: 100, chat: { id: 123, type: 'private' }, from: { id: 123 }, contact: { user_id: 123, phone_number: '+380501234567' } } };
+  const forwarding = createWebhookHandler(() => getConfig({ ...env, SYNC_API_URL: 'https://sync.example.com' }), async (url, options) => {
+    calls++;
+    assert.equal(url, 'https://sync.example.com/api/telegram/contact');
+    assert.equal(options.headers['X-Telegram-Bot-Api-Secret-Token'], 'a'.repeat(64));
+    assert.equal(JSON.parse(options.body).message.contact.phone_number, '+380501234567');
+    return Response.json({ saved: true });
+  });
+  const req = request(contactUpdate); req.headers.set('X-Telegram-Bot-Api-Secret-Token', 'a'.repeat(64));
+  assert.equal((await forwarding(req)).status, 200);
+  assert.equal(calls, 1);
+  assert.equal((await forwarding(request(contactUpdate))).status, 401);
+  const foreign = structuredClone(contactUpdate); foreign.message.contact.user_id = 456;
+  assert.equal((await forwarding(request(foreign))).status, 200);
+  assert.equal(calls, 1);
+  const unavailable = createWebhookHandler(() => getConfig({ ...env, SYNC_API_URL: 'https://sync.example.com' }), async () => { throw Error('Network failure'); });
+  const retry = request(contactUpdate); retry.headers.set('X-Telegram-Bot-Api-Secret-Token', 'a'.repeat(64));
+  assert.equal((await unavailable(retry)).status, 502);
 });

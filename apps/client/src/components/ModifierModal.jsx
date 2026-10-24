@@ -2,15 +2,6 @@ import React, { useState } from 'react';
 import { X, Plus, Minus, Check, Flame, Leaf } from 'lucide-react';
 import { tg } from '../utils/telegram';
 import ProductImage from './ProductImage';
-import { mediaUrl } from '../utils/orderSync';
-
-function IngredientPhoto({ ingredient }) {
-  const [failed, setFailed] = useState(null);
-  return <div className="w-[72px] h-[72px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 flex items-center justify-center">
-    {ingredient.imageUrl && failed !== ingredient.imageUrl ? <img src={mediaUrl(ingredient.imageUrl)} alt={ingredient.name} width="72" height="72" loading="lazy" onError={() => setFailed(ingredient.imageUrl)} className="h-full w-full object-cover"/>
-      : <Leaf size={24} className="text-zinc-600" role="img" aria-label={`Фото ${ingredient.name} ще не додано`}/>}
-  </div>;
-}
 
 export default function ModifierModal({ product, onClose, onAdd, modifiers: MODIFIERS, orderingDisabled, orderingUnavailableLabel, previewOnly = false, maxQuantity = 5 }) {
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || null);
@@ -128,16 +119,13 @@ export default function ModifierModal({ product, onClose, onAdd, modifiers: MODI
             </button>
           </div>
 
-          <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/60">
+          {!product.ingredients?.length && <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/60">
             {product.description}
-          </p>
+          </p>}
 
-          {!!product.ingredients?.length && <section aria-label="Фото інгредієнтів">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">Інгредієнти</h3>
-            <div className="flex gap-3 overflow-x-auto pb-1">{product.ingredients.map(item => <div key={item.id} className="w-[72px] shrink-0 text-center">
-              <IngredientPhoto ingredient={item}/>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-400"><Leaf size={12} className="inline-block mr-1 text-orange-300/80" aria-hidden="true"/>{item.name}</p>
-            </div>)}</div>
+          {!!product.ingredients?.length && <section aria-label="Інгредієнти">
+            <h3 className="mb-2.5 text-sm font-semibold text-zinc-200">Інгредієнти</h3>
+            <div className="flex flex-wrap gap-2">{product.ingredients.map(item => <span key={item.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-zinc-700/70 bg-zinc-800/50 px-3 py-1.5 text-xs leading-5 text-zinc-300"><Leaf size={12} className="shrink-0 text-orange-300/80" aria-hidden="true"/>{item.name}</span>)}</div>
           </section>}
 
           {!!product.sizes?.length && (

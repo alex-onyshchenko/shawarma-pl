@@ -46,9 +46,10 @@ test('client reads only public menu/availability; tracking opens the bot without
     const { default: seed } = await server.ssrLoadModule('/src/preview-menu.json');
     const withIngredients = { ...seed.products[0], ingredients: [{ id: 'tomato', name: 'Томати', imageUrl: '' }, { id: 'cheese', name: 'Сир', imageUrl: '/media/00000000-0000-0000-0000-000000000000.webp' }] };
     const ingredientHtml = renderToStaticMarkup(React.createElement(Modifier, { product: withIngredients, modifiers: seed.modifiers, previewOnly: true }));
-    assert.match(ingredientHtml, /Фото Томати ще не додано/);
-    assert.match(ingredientHtml, /Фото інгредієнтів/);
-    assert.match(ingredientHtml, /00000000-0000-0000-0000-000000000000.webp/);
+    assert.match(ingredientHtml, /aria-label="Інгредієнти"/);
+    assert.match(ingredientHtml, /Томати/);
+    assert.match(ingredientHtml, /Сир/);
+    assert.ok(!ingredientHtml.includes('00000000-0000-0000-0000-000000000000.webp'));
   } finally {
     unsubscribe?.();
     globalThis.fetch = originalFetch;

@@ -65,7 +65,8 @@ function broadcast(eventType, payload) {
         if (order.status === 'no_show') customers.restrict(order.telegramUserId, order.id);
         if (eventType === 'new_order') notifications.enqueue(order, 'placed');
         else if (order.status === 'new' && order.acceptedAt) notifications.enqueue(order, 'confirmed');
-        else if (['cooking', 'ready', 'cancelled', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
+        else if (order.status === 'cancelled') notifications.cancel(order);
+        else if (['cooking', 'ready', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
       }
       store.db.exec('COMMIT');
     } catch (error) { store.db.exec('ROLLBACK'); throw error; }
@@ -169,7 +170,8 @@ const server = http.createServer(async (req, res) => {
       store.db.exec('BEGIN IMMEDIATE');
       try {
         store.set('orders', { orders, archivedOrders, nextOrderId });
-        if (['cooking', 'ready', 'cancelled', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
+        if (order.status === 'cancelled') notifications.cancel(order);
+        else if (['cooking', 'ready', 'no_show'].includes(order.status)) notifications.enqueue(order, order.status);
         else if (order.status === 'new') notifications.enqueue(order, order.acceptedAt ? 'confirmed' : 'placed');
         store.db.exec('COMMIT');
       } catch (error) { store.db.exec('ROLLBACK'); throw error; }

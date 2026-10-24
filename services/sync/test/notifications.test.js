@@ -78,7 +78,7 @@ test('queue writes roll back with the order transaction', () => {
   } finally { db.close(); }
 });
 
-test('cancellation supersedes pending confirmations and sends its reason once', async () => {
+test('cancellation suppresses queued messages without sending its reason', async () => {
   const db = new DatabaseSync(':memory:'); const sent = [];
   try {
     const queue = createNotifications(db, { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } });
@@ -86,9 +86,11 @@ test('cancellation supersedes pending confirmations and sends its reason once', 
     const cancelled = { ...order, cancellationComment: 'Закінчилася курка' };
     queue.enqueue(cancelled, 'cancelled'); queue.enqueue(cancelled, 'cancelled');
     await queue.tick(); await queue.tick();
-    assert.equal(sent.length, 1);
-    assert.match(sent[0].text, /скасовано кухнею/);
-    assert.match(sent[0].text, /Закінчилася курка/);
+    assert.equal(sent.length, 0);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM telegram_outbox WHERE state='cancelled'").get().n, 2);
+    db.prepare("INSERT INTO telegram_outbox(order_key,kind,chat_id,text) VALUES('legacy','cancelled',12345,'Old cancellation message')").run();
+    const restarted = createNotifications(db, { token: 'test-token', fetcher: async (_, request) => { sent.push(JSON.parse(request.body)); return success; } });
+    await restarted.tick();
+    assert.equal(sent.length, 0, 'previously queued cancellation notices are suppressed after restart');
   } finally { db.close(); }
 });

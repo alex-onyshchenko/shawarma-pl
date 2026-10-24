@@ -87,14 +87,12 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.equal(snapshot.archivedOrders.filter(order => order.id === cancelled.body.order.id).length, 1);
     assert.equal((await call(cancelPath + '/status', 'PATCH', { status: 'ready' })).status, 409);
     assert.equal((await call('/api/orders/' + id + '/cancel', 'POST', { comment: 'Too late' })).status, 409);
-    await waitFor(() => sent().some(message => message.text.includes('скасовано кухнею')));
-    assert.equal(sent().filter(message => message.text.includes('скасовано кухнею')).length, 1);
-    assert.match(sent().find(message => message.text.includes('скасовано кухнею')).text, /Закінчилася курка/);
     assert.equal((await call('/api/analytics')).body.summary.totalOrders, 2);
     const noShow = await call('/api/orders/' + id + '/no-show', 'POST', { confirmed: true });
     assert.equal(noShow.status, 200);
     await waitFor(() => sent().some(message => message.text.includes('позначене як невикуплене')));
     assert.equal(sent().filter(message => message.text.includes('позначене як невикуплене')).length, 1);
+    assert.ok(!sent().some(message => /скасовано|Закінчилася курка/.test(message.text)));
     assert.ok(!output.includes(token));
   } finally {
     if (child.exitCode === null && child.signalCode === null) { const ended = once(child, 'exit'); child.kill(); await ended; }

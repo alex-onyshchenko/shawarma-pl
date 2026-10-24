@@ -10,7 +10,6 @@ export function notificationText(order, kind) {
     ? `⚠️ Замовлення #${order.id} вже в черзі! Через навантаження кухні новий час видачі — ${at}. Дякуємо за розуміння!`
     : `🎯 Час видачі замовлення #${order.id} підтверджено: ${at}. Оплата при отриманні. Чекаємо на вас!`;
   if (kind === 'no_show') return `Замовлення #${order.id} позначене як невикуплене. Надалі замовлення доступні лише за повною онлайн-передоплатою. Поки онлайн-оплату не підключено, оформлення у застосунку тимчасово недоступне. Меню залишається доступним.`;
-  if (kind === 'cancelled') return `❌ Замовлення #${order.id} скасовано кухнею.\nПричина: ${order.cancellationComment}\nПерепрошуємо за незручності.`;
   if (kind === 'cooking') return `🔥 Ваше замовлення #${order.id} вже готується!\nОрієнтовний час видачі: ${at}.\nПовідомимо, щойно все буде готово.`;
   return `✅ Замовлення #${order.id} готове до видачі!\n📍 ${order.selectedLocation?.name || order.pointName}\nЧекаємо на вас. Смачного!`;
 }
@@ -23,11 +22,14 @@ export function createNotifications(db, { token = '', fetcher = fetch, now = Dat
     next_at INTEGER NOT NULL DEFAULT 0, message_id INTEGER,
     UNIQUE(order_key, kind)
   )`);
+  db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE kind='cancelled' AND state='pending'").run();
   const key = order => `${order.createdAt}:${order.id}`;
   let busy = false;
+  function cancel(order) { db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending'").run(key(order)); }
   function enqueue(order, kind) {
+    if (kind === 'cancelled') { cancel(order); return; }
     if (!token || !order?.telegramUserId || !order.notificationsEnabled) return;
-    if (['cancelled', 'no_show'].includes(kind)) db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending' AND kind!=?").run(key(order), kind);
+    if (kind === 'no_show') db.prepare("UPDATE telegram_outbox SET state='cancelled' WHERE order_key=? AND state='pending' AND kind!=?").run(key(order), kind);
     db.prepare('INSERT OR IGNORE INTO telegram_outbox(order_key,kind,chat_id,text,next_at) VALUES(?,?,?,?,?)')
       .run(key(order), kind, order.telegramUserId, notificationText(order, kind), now());
   }
@@ -60,5 +62,5 @@ export function createNotifications(db, { token = '', fetcher = fetch, now = Dat
         permanent ? 'failed' : 'pending', attempts, now() + Math.max(retry * 1000, Math.min(3600000, 2000 * 2 ** Math.min(attempts, 10))), job.id);
     } finally { busy = false; }
   }
-  return { enqueue, tick, configured: Boolean(token) };
+  return { enqueue, cancel, tick, configured: Boolean(token) };
 }

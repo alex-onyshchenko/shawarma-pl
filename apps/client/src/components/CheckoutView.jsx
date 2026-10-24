@@ -31,7 +31,6 @@ export default function CheckoutView({
   const selectedLocation = point ? { id: point.id, name: point.address, metro: point.metro } : null;
   const [phoneNumber, setPhoneNumber] = useState(profile?.phoneNumber || '');
   const [napkins, setNapkins] = useState(true);
-  const [wantNotifications, setWantNotifications] = useState(true);
   const paymentMethod = 'cash';
 
   const [timingMode, setTimingMode] = useState('asap');
@@ -85,7 +84,7 @@ export default function CheckoutView({
       onProfileChange?.(currentProfile);
       if (currentProfile.prepaymentOnly || finalTotal > LIMITS.cashMax) throw new Error(currentProfile.prepaymentOnly ? 'Для вас доступні лише замовлення з передоплатою. Онлайн-оплату ще не підключено.' : prepaymentMessage);
       if (!/^\+?[\d\s().-]{7,30}$/.test(phoneNumber.trim())) throw new Error('Вкажіть коректний номер для дзвінків');
-      const notificationsEnabled = wantNotifications && availability?.telegramNotifications && tg.isAvailable ? await tg.requestNotifications() : false;
+      const notificationsEnabled = availability?.telegramNotifications && tg.isAvailable ? await tg.requestNotifications() : false;
       const current = await orderSync.getAvailability();
       setAvailability(current);
       if (!current.acceptingOrders) throw new Error(current.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено');
@@ -329,10 +328,10 @@ export default function CheckoutView({
           <span>Спосіб оплати</span>
         </h3>
         <div className="grid grid-cols-2 gap-2">
-          {!prepaymentRequired && <button type="button" aria-pressed="true" className="p-3 rounded-xl border border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500 flex flex-col items-center gap-1">
+          <button type="button" disabled={prepaymentRequired} aria-pressed={!prepaymentRequired} className={`p-3 rounded-xl border flex flex-col items-center gap-1 ${prepaymentRequired ? 'border-zinc-800 bg-zinc-800/40 text-zinc-500 opacity-50 cursor-not-allowed' : 'border-emerald-500 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500'}`}>
             <Banknote size={18} />
             <span className="text-xs font-semibold">При отриманні</span>
-          </button>}
+          </button>
           <button type="button" disabled className="p-3 rounded-xl border border-zinc-800 bg-zinc-800/40 text-zinc-500 opacity-50 cursor-not-allowed flex flex-col items-center gap-1">
             <CreditCard size={18} />
             <span className="text-xs font-semibold">Картка онлайн</span>
@@ -363,12 +362,6 @@ export default function CheckoutView({
         </div>
       </div>
 
-      <p className="text-xs text-zinc-400">До 500 грн включно — оплата при отриманні. Ліміт: 5 одиниць однієї позиції та 10 товарів загалом.</p>
-      {prepaymentRequired && <p role="alert" className="rounded-xl border border-amber-700/50 bg-amber-500/10 p-4 text-sm leading-6 text-amber-200">{prepaymentMessage}</p>}
-      {tg.isAvailable && availability?.telegramNotifications && <label className="flex gap-3 rounded-xl border border-zinc-800 p-4 text-sm">
-        <input type="checkbox" checked={wantNotifications} onChange={event => setWantNotifications(event.target.checked)} className="accent-orange-500" />
-        <span>Повідомляти про готовність у Telegram<span className="mt-1 block text-xs text-zinc-400">Telegram запитає дозвіл, якщо його ще немає. Без дозволу бот не зможе надсилати сповіщення.</span></span>
-      </label>}
       {hasUnavailableItems && <p role="alert" className="text-sm text-red-300">Деякі позиції недоступні. Видаліть їх або оберіть склад заново.</p>}
       {submitError && <p role="alert" className="rounded-xl border border-red-700 bg-red-950 p-3 text-sm text-red-200">{submitError}</p>}
       {/* Sticky Native-like Telegram MainButton */}

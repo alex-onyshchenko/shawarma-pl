@@ -6,7 +6,7 @@ import { createMedia } from './media.js';
 import { telegramUser, trackingHash, ownsOrder, publicJson } from './telegram.js';
 import { createNotifications } from './notifications.js';
 import { fileURLToPath } from 'node:url';
-import { createStore, hoursForPoint, quoteOrder, DEMO_POINT_ID } from './store.js';
+import { createStore, hoursForPoint, cafeAvailability, quoteOrder, DEMO_POINT_ID } from './store.js';
 import { createAdminHandler } from './admin.js';
 import { MINUTE, normalizeTiming, getSlots, asapAvailable, formatTime, earlyStart, getManualSlots, normalizeManualTiming, getReadyTimeSlots } from './timing.js';
 
@@ -23,10 +23,10 @@ notificationTimer.unref();
 function availability() {
   const serverNow = Date.now();
   const point = store.activePoint();
-  const hours = hoursForPoint(point, serverNow);
+  const hours = cafeAvailability(point, serverNow);
   const slots = getSlots(serverNow, hours);
-  const acceptingOrders = point.acceptingOrders && !point.onBreak;
-  return { ...hours, point, serverNow, telegramNotifications: notifications.configured, slots, manualSlots: getManualSlots(serverNow), cafeOpen: point.acceptingOrders, onBreak: point.onBreak, acceptingOrders, asapAvailable: acceptingOrders && asapAvailable(serverNow, hours) };
+  const { acceptingOrders } = hours;
+  return { ...hours, point, serverNow, telegramNotifications: notifications.configured, slots, manualSlots: getManualSlots(serverNow), acceptingOrders, asapAvailable: acceptingOrders && asapAvailable(serverNow, hours) };
 }
 function json(res, code, body) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
@@ -141,6 +141,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/points' && req.method === 'GET') { json(res, 200, { points: [store.activePoint()] }); return; }
 
   if (pathname === '/api/availability' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
     json(res, 200, availability());
     return;
   }
@@ -241,7 +242,11 @@ const server = http.createServer(async (req, res) => {
       if (duplicate && duplicate.trackingTokenHash && !ownsOrder(duplicate, { ...data, user })) { json(res, 409, { error: 'Ключ запиту вже використано' }); return; }
       if (duplicate) { json(res, 200, { success: true, order: duplicate }); return; }
       const cafe = store.activePoint();
-      if (!manual && (!cafe.acceptingOrders || cafe.onBreak)) { json(res, 409, { error: cafe.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено', code: cafe.onBreak ? 'LUNCH_BREAK' : 'ORDERS_PAUSED' }); return; }
+      const admission = cafeAvailability(cafe);
+      if (!manual && !admission.acceptingOrders) {
+        const outside = !admission.withinWorkingHours;
+        json(res, 409, { error: outside ? 'Кафе зачинено за розкладом. Прийом замовлень зупинено' : cafe.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено', code: outside ? 'OUTSIDE_WORKING_HOURS' : cafe.onBreak ? 'LUNCH_BREAK' : 'ORDERS_PAUSED' }); return;
+      }
       if (!Array.isArray(data.items) || !data.items.length) throw new Error('Замовлення не може бути порожнім');
       if (data.paymentMethod && data.paymentMethod !== 'cash') { json(res, 409, { error: 'Наразі доступна лише оплата при отриманні' }); return; }
       if (data.cutlery !== undefined && typeof data.cutlery !== 'boolean') { json(res, 400, { error: 'Перевірте вибір приборів' }); return; }

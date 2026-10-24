@@ -1,3 +1,4 @@
+import { localParts } from './timing.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -89,6 +90,14 @@ export function hoursForPoint(point, now = Date.now()) {
   const day = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[weekday];
   const rule = point.exceptions.find(rule => rule.date === date) || point.weeklyHours[day];
   return { timeZone: point.timeZone, openMinute: minutes(rule.open), closeMinute: minutes(rule.close), closed: rule.closed };
+}
+
+export function cafeAvailability(point, now = Date.now()) {
+  const hours = hoursForPoint(point, now);
+  const minute = localParts(now, point.timeZone).minutes;
+  const withinWorkingHours = !hours.closed && minute >= hours.openMinute && minute < hours.closeMinute;
+  const cafeOpen = Boolean(point.acceptingOrders) && withinWorkingHours;
+  return { ...hours, withinWorkingHours, cafeOpen, onBreak: Boolean(point.onBreak), acceptingOrders: cafeOpen && !point.onBreak };
 }
 
 export function createStore(filename, seedHours = { timeZone: 'Europe/Kyiv', openHour: 10, closeHour: 22 }) {

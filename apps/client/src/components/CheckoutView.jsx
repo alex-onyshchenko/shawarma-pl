@@ -88,7 +88,7 @@ export default function CheckoutView({
       const notificationsEnabled = availability?.telegramNotifications && tg.isAvailable ? await tg.requestNotifications() : false;
       const current = await orderSync.getAvailability();
       setAvailability(current);
-      if (!current.acceptingOrders) throw new Error(current.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено');
+      if (!current.acceptingOrders) throw new Error(current.cafeOpen !== false && current.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено' : 'Кафе зачинено. Прийом замовлень зупинено');
       const timing = normalizeTiming({ timingMode, requestedReadyAt: Number(selectedSlot) }, Date.now(), current);
       if (timingMode === 'scheduled') setRequestedReadyAt(String(timing.baselineReadyAt));
       await onPlaceOrder({
@@ -310,7 +310,7 @@ export default function CheckoutView({
           </div>
         )}
         {!availability && <p className="text-xs text-amber-300">Перевіряємо доступність кухні…</p>}
-        {availability && !availability.acceptingOrders && <p role="status" className="text-sm text-amber-300">{availability.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено.' : 'Кафе зачинено. Прийом нових замовлень зупинено.'}</p>}
+        {availability && !availability.acceptingOrders && <p role="status" className="text-sm text-amber-300">{availability.cafeOpen !== false && availability.onBreak ? 'Обідня перерва. Прийом замовлень тимчасово призупинено.' : 'Кафе зачинено. Прийом нових замовлень зупинено.'}</p>}
         {availability?.acceptingOrders && !canSubmit && <p role="status" className="text-xs text-amber-300">{timingMode === 'asap' && slots.length ? 'На зараз недоступно. Оберіть точний час.' : 'Сьогодні прийом замовлень завершено.'}</p>}
       </section>
 

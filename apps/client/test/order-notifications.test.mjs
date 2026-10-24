@@ -39,6 +39,13 @@ test('client reads only public menu/availability; tracking opens the bot without
     assert.deepEqual(navigation, ['https://t.me/shaurmisha_pl_bot', 'close']);
     const { default: Success } = await server.ssrLoadModule('/src/components/OrderSuccessModal.jsx');
     const html = renderToStaticMarkup(React.createElement(Success, { order: { id: '1001', notificationsEnabled: true, baselineReadyAt: Date.now(), timeZone: 'Europe/Kyiv', totalPrice: 200, items: [], pointName: 'ШаурМіша' }, telegramNotifications: true, onReset: () => {} }));
+    const { default: CafeStatus } = await server.ssrLoadModule('/src/components/CafeStatus.jsx');
+    for (const [availability, label] of [
+      [{ cafeOpen: true, onBreak: false }, 'Відчинено'],
+      [{ cafeOpen: true, onBreak: true }, 'Обідня перерва'],
+      [{ cafeOpen: false, onBreak: true, point: { acceptingOrders: true } }, 'Зачинено'],
+      [{ cafeOpen: false, onBreak: false, point: { acceptingOrders: true } }, 'Зачинено'],
+    ]) assert.ok(renderToStaticMarkup(React.createElement(CafeStatus, { availability })).includes(label));
     assert.match(html, /Відстежувати статус/);
     assert.ok(!html.includes('імітація'));
     assert.deepEqual(paths.sort(), ['/api/availability', '/api/menu']);

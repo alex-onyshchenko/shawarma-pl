@@ -33,7 +33,7 @@ function MenuApp({ profile, onProfileChange }) {
   const [toastMessage, setToastMessage] = useState(null);
   const [user, setUser] = useState(null);
   const canAddToCart = availability?.acceptingOrders === true;
-  const orderingUnavailableLabel = !availability ? 'Уточнюємо статус…' : availability.onBreak ? 'Обідня перерва' : 'Кафе зачинено';
+  const orderingUnavailableLabel = !availability ? 'Уточнюємо статус…' : availability.cafeOpen !== false && availability.onBreak ? 'Обідня перерва' : 'Кафе зачинено';
 
   const applyMenu = data => {
     if (!data) return;

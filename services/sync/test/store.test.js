@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStore, hoursForPoint, quoteOrder } from '../store.js';
+import { createStore, hoursForPoint, cafeAvailability, quoteOrder } from '../store.js';
 import { getSlots } from '../timing.js';
 
 test('SQLite retains point settings, menus, draft-only invariant and order state after reopening', () => {
@@ -148,5 +148,36 @@ test('point logo validates, persists and is returned in the public menu', () => 
     assert.throws(() => store.updatePoint('demo', { logoUrl: 'javascript:alert(1)' }));
     store.updatePoint('demo', { logoUrl: '' });
     assert.equal(store.point('demo').logoUrl, '');
+  } finally { store.close(); }
+});
+
+
+test('cafe status combines database hours, exceptions, manual closure and lunch at local-time boundaries', () => {
+  const store = createStore(':memory:');
+  try {
+    const point = store.activePoint();
+    const at = time => Date.parse(`2026-10-24T${time}:00+03:00`);
+    for (const [time, open] of [['09:59', false], ['10:00', true], ['21:59', true], ['22:00', false]]) {
+      const status = cafeAvailability(point, at(time));
+      assert.equal(status.cafeOpen, open, time);
+      assert.equal(status.acceptingOrders, open, time);
+      assert.equal(point.acceptingOrders, true, 'schedule must not overwrite the manual switch');
+    }
+    assert.equal(cafeAvailability({ ...point, acceptingOrders: false }, at('12:00')).cafeOpen, false);
+    const lunch = cafeAvailability({ ...point, onBreak: true }, at('12:00'));
+    assert.equal(lunch.cafeOpen, true);
+    assert.equal(lunch.acceptingOrders, false);
+    assert.equal(cafeAvailability({ ...point, onBreak: true }, at('22:00')).cafeOpen, false);
+    const holiday = { ...point, exceptions: [{ date: '2026-10-24', closed: true, open: '10:00', close: '22:00' }] };
+    assert.equal(cafeAvailability(holiday, at('12:00')).cafeOpen, false);
+    const shortDay = { ...point, exceptions: [{ date: '2026-10-24', closed: false, open: '11:30', close: '15:45' }] };
+    assert.equal(cafeAvailability(shortDay, at('11:29')).cafeOpen, false);
+    assert.equal(cafeAvailability(shortDay, at('11:30')).cafeOpen, true);
+    assert.equal(cafeAvailability(shortDay, at('15:45')).cafeOpen, false);
+    for (const day of ['2026-03-29', '2026-10-25']) {
+      const openingUTC = day.includes('03-29') ? '07:00' : '08:00';
+      assert.equal(cafeAvailability(point, Date.parse(`${day}T${openingUTC}:00Z`)).cafeOpen, true);
+      assert.equal(cafeAvailability(point, Date.parse(`${day}T${openingUTC}:00Z`) - 60000).cafeOpen, false);
+    }
   } finally { store.close(); }
 });

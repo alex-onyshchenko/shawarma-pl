@@ -3,7 +3,7 @@ import { Coffee } from 'lucide-react';
 
 export default function CafeStatus({ availability }) {
   const open = availability?.cafeOpen ?? availability?.point?.acceptingOrders ?? availability?.acceptingOrders;
-  const mode = !availability ? 'loading' : availability.onBreak ? 'break' : open ? 'open' : 'closed';
+  const mode = !availability ? 'loading' : !open ? 'closed' : availability.onBreak ? 'break' : 'open';
   const styles = {
     loading: 'border-zinc-800 bg-zinc-900 text-zinc-400',
     open: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',

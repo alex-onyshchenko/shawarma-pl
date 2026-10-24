@@ -49,6 +49,8 @@ export default function KitchenDisplayApp() {
   const [timeOrder, setTimeOrder] = useState(null);
   const [cancelComment, setCancelComment] = useState('');
 
+  const manualOpen = availability?.point?.acceptingOrders ?? availability?.cafeOpen ?? false;
+
   const applySnapshot = data => {
     setOrders(data.orders || []);
     if (data.availability) setAvailability(data.availability);
@@ -207,10 +209,10 @@ export default function KitchenDisplayApp() {
             <span>Створити замовлення</span>
           </button>
 
-          <button disabled={!availability || busy} onClick={() => runAction(() => orderSync.setAcceptingOrders(!availability.cafeOpen))} aria-label={availability?.cafeOpen ? 'Зачинити кафе' : 'Відчинити кафе'} title={availability?.cafeOpen ? 'Зачинити кафе' : 'Відчинити кафе'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${availability?.cafeOpen ? 'border-red-700 text-red-300 hover:bg-red-500/10' : 'border-emerald-600 text-emerald-300 hover:bg-emerald-500/10'}`}>
-            {availability?.cafeOpen ? <LockKeyhole size={20}/> : <LockKeyholeOpen size={20}/>}
+          <button disabled={!availability || busy} onClick={() => runAction(() => orderSync.setAcceptingOrders(!manualOpen))} aria-label={manualOpen ? 'Зачинити кафе' : 'Відчинити кафе'} title={manualOpen ? 'Зачинити кафе' : 'Відчинити кафе'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${manualOpen ? 'border-red-700 text-red-300 hover:bg-red-500/10' : 'border-emerald-600 text-emerald-300 hover:bg-emerald-500/10'}`}>
+            {manualOpen ? <LockKeyhole size={20}/> : <LockKeyholeOpen size={20}/>}
           </button>
-          <button disabled={!availability?.cafeOpen || busy} onClick={() => runAction(() => orderSync.setBreak(!availability.onBreak))} aria-pressed={!!availability?.onBreak} aria-label={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} title={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-40 ${availability?.onBreak ? 'border-amber-500 bg-amber-500/15 text-amber-200' : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'}`}>
+          <button disabled={!manualOpen || busy} onClick={() => runAction(() => orderSync.setBreak(!availability.onBreak))} aria-pressed={!!availability?.onBreak} aria-label={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} title={availability?.onBreak ? 'Завершити перерву' : 'Обідня перерва'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-40 ${availability?.onBreak ? 'border-amber-500 bg-amber-500/15 text-amber-200' : 'border-zinc-700 text-zinc-300 hover:bg-zinc-800'}`}>
             <Coffee size={20} />
           </button>
           {/* Sound Toggle */}
@@ -253,7 +255,7 @@ export default function KitchenDisplayApp() {
         </div>
       </header>
 
-      {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
+      {availability && !availability.acceptingOrders && <div role="status" className="bg-amber-950 text-amber-200 px-5 py-3 font-bold">{availability.cafeOpen !== false && availability.onBreak ? 'Обідня перерва. Нові замовлення призупинено, вже оформлені — виконуємо.' : 'Кафе зачинено. Нові замовлення не приймаємо, вже оформлені — виконуємо.'}</div>}
       {cancelOrderId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><form role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-lg space-y-5 rounded-2xl border border-zinc-700 bg-zinc-900 p-6" onSubmit={async event => { event.preventDefault(); if (await runAction(() => orderSync.cancelOrder(cancelOrderId, cancelComment.trim()))) setCancelOrderId(null); }}>
         <h2 id="cancel-title" className="text-xl font-semibold">Скасувати замовлення #{cancelOrderId}?</h2>
         <p className="text-sm leading-6 text-zinc-400">Замовлення зникне з робочого екрана. Без коментаря клієнт не отримає повідомлення. Заповнений коментар надішлемо в Telegram.</p>

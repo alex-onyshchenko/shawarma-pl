@@ -392,7 +392,13 @@ test('schedule exceptions close ordering; minute-level schedules and modifier ed
     assert.equal((await admin('/points/demo', 'PATCH', { exceptions: [{ date, closed: true, open: '10:30', close: '21:45' }] })).status, 200);
     assert.equal((await request('/api/availability')).data.closed, true);
     assert.deepEqual((await request('/api/availability')).data.slots, []);
-    assert.equal((await request('/api/orders', 'POST', { items: [item] })).status, 400);
+    const closedAvailability = (await request('/api/availability')).data;
+    assert.equal(closedAvailability.cafeOpen, false);
+    assert.equal(closedAvailability.acceptingOrders, false);
+    assert.equal(closedAvailability.point.acceptingOrders, true);
+    const closedOrder = await request('/api/orders', 'POST', { items: [item] });
+    assert.equal(closedOrder.status, 409);
+    assert.equal(closedOrder.data.code, 'OUTSIDE_WORKING_HOURS');
     const manualSlots = (await request('/api/availability')).data.manualSlots;
     const manualOnHoliday = await request('/api/kitchen/orders', 'POST', { items: [{ ...item, toastingLevel: 'normal' }], requestedReadyAt: manualSlots[0] });
     assert.equal(manualOnHoliday.status, 201);
@@ -400,6 +406,8 @@ test('schedule exceptions close ordering; minute-level schedules and modifier ed
     assert.equal(manualOnHoliday.data.order.confirmedReadyAt, manualSlots[0]);
     await admin('/points/demo', 'PATCH', { exceptions: [], weeklyHours: point.weeklyHours.map(() => ({ closed: false, open: '00:00', close: '00:15' })) });
     assert.equal((await request('/api/availability')).data.asapAvailable, false);
+    assert.equal((await request('/api/availability')).data.cafeOpen, false);
+    assert.equal((await request('/api/availability')).data.acceptingOrders, false);
     assert.equal((await request('/api/kitchen/orders', 'POST', { items: [item], requestedReadyAt: manualSlots[0] })).status, 201);
     assert.equal((await admin('/points/demo', 'PATCH', { weeklyHours: point.weeklyHours.map(rule => ({ ...rule, open: '22:00', close: '10:00' })) })).status, 400);
     const modifiers = (await admin('/state')).data.modifiers;

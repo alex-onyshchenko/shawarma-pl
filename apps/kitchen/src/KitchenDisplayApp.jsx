@@ -412,7 +412,7 @@ function OrderCard({ order, currentTime, onAdvance, onChangeTime, onCancel, onNo
           <span className="break-all text-[22px] font-semibold leading-tight tracking-tight text-zinc-100 tabular-nums">#{order.id}</span>
           {order.source === 'kitchen' && <span className="text-[11px] text-zinc-500">Вручну</span>}
         </div>
-        {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"><X size={17}/></button>}
+        {['new', 'cooking', 'ready'].includes(order.status) && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"><X size={17}/></button>}
       </div>
 
       <div className="mt-4 flex items-start justify-between gap-4">

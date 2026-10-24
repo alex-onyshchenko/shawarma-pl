@@ -361,7 +361,7 @@ const server = http.createServer(async (req, res) => {
       const index = orders.findIndex(order => order.id === id);
       if (index === -1) { json(res, 404, { error: 'Замовлення не знайдено' }); return; }
       const order = orders[index];
-      if (order.status !== 'new') { json(res, 409, { error: 'Скасувати можна лише нове замовлення до початку приготування' }); return; }
+      if (!['new', 'cooking', 'ready'].includes(order.status)) { json(res, 409, { error: 'Скасувати можна лише активне замовлення' }); return; }
       const cancelled = { ...order, status: 'cancelled', cancellationComment: comment.trim(), cancelledAt: Date.now(), notification: comment.trim() ? `Замовлення скасовано. Причина: ${comment.trim()}` : 'Замовлення скасовано' };
       orders.splice(index, 1);
       archivedOrders.unshift(cancelled);

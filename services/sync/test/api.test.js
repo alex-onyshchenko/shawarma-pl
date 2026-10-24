@@ -501,3 +501,25 @@ test('starting preparation implicitly confirms the displayed deadline', async ()
   assert.equal(result.data.order.confirmedReadyAt, order.baselineReadyAt);
   assert.ok(result.data.order.acceptedAt);
 });
+
+
+test('orders can be cancelled from every active column, but not after being issued', async () => {
+  for (const status of ['new', 'cooking', 'ready', 'archived']) {
+    const created = await request('/api/orders', 'POST', { items: [item] });
+    assert.equal(created.status, 201);
+    const id = created.data.order.id;
+    const path = `/api/orders/${id}`;
+    if (status !== 'new') assert.equal((await request(path + '/status', 'PATCH', { status: 'cooking', confirmEarly: true })).status, 200);
+    if (['ready', 'archived'].includes(status)) assert.equal((await request(path + '/status', 'PATCH', { status: 'ready', confirmEarly: true })).status, 200);
+    if (status === 'archived') assert.equal((await request(path + '/status', 'PATCH', { status: 'archived' })).status, 200);
+    const result = await request(path + '/cancel', 'POST', { comment: status === 'cooking' ? 'Закінчилися інгредієнти' : '' });
+    if (status === 'archived') { assert.equal(result.status, 404); continue; }
+    assert.equal(result.status, 200);
+    assert.equal(result.data.order.status, 'cancelled');
+    assert.equal(result.data.order.cancellationComment, status === 'cooking' ? 'Закінчилися інгредієнти' : '');
+    assert.equal((await request(path + '/cancel', 'POST', {})).data.order.cancelledAt, result.data.order.cancelledAt);
+    const snapshot = (await request('/api/orders')).data;
+    assert.ok(!snapshot.orders.some(order => order.id === id));
+    assert.equal(snapshot.archivedOrders.filter(order => order.id === id && order.status === 'cancelled').length, 1);
+  }
+});

@@ -98,7 +98,6 @@ test('API queues actual order events, validates identity and never exposes Teleg
     assert.ok(!snapshot.orders.some(order => order.id === cancelled.body.order.id));
     assert.equal(snapshot.archivedOrders.filter(order => order.id === cancelled.body.order.id).length, 1);
     assert.equal((await call(cancelPath + '/status', 'PATCH', { status: 'ready' })).status, 409);
-    assert.equal((await call('/api/orders/' + id + '/cancel', 'POST', { comment: 'Too late' })).status, 409);
     assert.equal((await call('/api/analytics')).body.summary.totalOrders, 2);
     const noShow = await call('/api/orders/' + id + '/no-show', 'POST', { confirmed: true });
     assert.equal(noShow.status, 200);

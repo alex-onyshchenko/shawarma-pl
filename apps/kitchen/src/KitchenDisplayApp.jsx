@@ -14,6 +14,8 @@ import {
   Minimize2,
   PlusCircle,
   Pencil,
+  Hourglass,
+  Play,
   ArrowLeft,
   UserCheck,
   Bell,
@@ -26,7 +28,6 @@ import { orderSync, mediaUrl } from './utils/orderSync';
 import { formatTime, MINUTE } from './utils/timing';
 import ReadyTimeModal from './components/ReadyTimeModal';
 import ManualOrderModal from './components/ManualOrderModal';
-import OrderExtras from './components/OrderExtras';
 
 export default function KitchenDisplayApp() {
   const [orders, setOrders] = useState([]);
@@ -406,34 +407,34 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
   const readyAt = order.confirmedReadyAt || order.baselineReadyAt;
   const remaining = readyAt ? Math.ceil((readyAt - currentTime.getTime()) / MINUTE) : null;
 
-  return <article aria-label={`Замовлення ${order.id}`} className={`relative rounded-2xl border p-4 shadow-sm transition-colors ${
-    order.status === 'cooking' ? 'border-orange-500/40 bg-zinc-900' :
-    order.status === 'ready' ? 'border-emerald-500/40 bg-zinc-900' : 'border-zinc-700/80 bg-zinc-900 hover:border-zinc-600'
+  return <article aria-label={`Замовлення ${order.id}`} className={`relative rounded-3xl border p-4 shadow-[0_8px_28px_rgba(0,0,0,0.18)] transition-colors ${
+    order.status === 'cooking' ? 'border-orange-500/30 bg-[#101011]' :
+    order.status === 'ready' ? 'border-emerald-500/30 bg-[#101011]' : 'border-zinc-700/70 bg-[#101011] hover:border-zinc-600'
   }`}>
-    <header className="mb-4 border-b border-zinc-800 pb-4">
-      <div className="flex min-h-8 items-center justify-between gap-3">
+    <header className="mb-5">
+      <div className="flex min-h-10 items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="break-all text-[22px] font-semibold leading-tight tracking-tight text-zinc-100 tabular-nums">#{order.id}</span>
+          <span className="break-all text-[32px] font-bold leading-tight tracking-tight text-zinc-50 tabular-nums">#{order.id}</span>
           {order.source === 'kitchen' && <span className="text-[11px] text-zinc-500">Вручну</span>}
         </div>
-        {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"><X size={17}/></button>}
+        {order.status === 'new' && <button type="button" disabled={busy} onClick={() => onCancel(order.id)} aria-label={`Скасувати замовлення #${order.id}`} title="Скасувати замовлення" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 transition-colors hover:bg-red-500/15 hover:text-red-300 disabled:opacity-40"><X size={21}/></button>}
       </div>
 
-      <div className="mt-4 flex items-start justify-between gap-4">
+      <div className="mt-5 flex items-stretch justify-between gap-3">
         {readyAt && <button type="button" disabled={busy} onClick={() => onChangeTime(order)} aria-label={`Змінити час видачі замовлення #${order.id}`} className="group -ml-1 min-w-0 rounded-lg px-1 text-left outline-offset-4 transition-colors hover:bg-zinc-800/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400 disabled:opacity-50">
-          <span className="block text-[11px] leading-5 text-zinc-500">{order.acceptedAt ? 'Час видачі' : 'Попередня видача'}</span>
-          <span className="flex items-center gap-2 text-[36px] font-semibold leading-[1.2] tracking-tight text-orange-200 tabular-nums">{formatTime(readyAt, order.timeZone)}<Pencil size={15} className="shrink-0 text-zinc-600 transition-colors group-hover:text-orange-300"/></span>
+          <span className="block text-xs leading-5 text-zinc-400">{order.acceptedAt ? 'Час видачі' : 'Попередня видача'}</span>
+          <span className="flex items-center gap-2 text-[40px] font-bold leading-[1.2] tracking-tight text-[#f3d29b] tabular-nums">{formatTime(readyAt, order.timeZone)}<Pencil size={18} className="shrink-0 text-zinc-500 transition-colors group-hover:text-orange-300"/></span>
           {new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(readyAt) !== new Intl.DateTimeFormat('en-CA', { timeZone: order.timeZone }).format(currentTime) && <span className="mt-1 block text-xs text-zinc-400">{new Intl.DateTimeFormat('uk-UA', { timeZone: order.timeZone, day: 'numeric', month: 'long' }).format(readyAt)}</span>}
         </button>}
-        {remaining > 0 && <div aria-label={`До видачі ${remaining} хв`} className="shrink-0 text-right">
-          <p className="text-[11px] leading-5 text-zinc-500">Залишилось</p>
-          <p className="pt-1 text-[24px] font-medium leading-tight tracking-tight text-zinc-300 tabular-nums">{remaining}<span className="ml-1 text-xs font-normal tracking-normal text-zinc-500">хв</span></p>
+        {remaining > 0 && <div aria-label={`До видачі ${remaining} хв`} className="flex shrink-0 flex-col items-end justify-center border-l border-zinc-800 pl-3 text-right">
+          <p className="mb-1 text-xs leading-5 text-zinc-400">Залишилось</p>
+          <p className="inline-flex items-center gap-1.5 rounded-xl bg-orange-400 px-2.5 py-1.5 text-[26px] font-bold leading-tight tracking-tight text-zinc-950 tabular-nums"><Hourglass size={20} strokeWidth={2.2}/>{remaining}<span className="text-sm font-semibold tracking-normal">хв</span></p>
         </div>}
       </div>
 
-      <div className="mt-4 flex items-start justify-between gap-3 text-xs leading-5">
-        <span className="min-w-0 break-words text-zinc-400">{order.customerName || 'Клієнт'}</span>
-        {order.phoneNumber && <a href={`tel:${order.phoneNumber.replace(/[^+0-9]/g, '')}`} className="flex shrink-0 items-center gap-1.5 text-zinc-400 transition-colors hover:text-zinc-100"><Phone size={12}/>{order.phoneNumber}</a>}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl border border-zinc-700/60 bg-zinc-800/70 px-3 py-2 text-[13px] leading-5">
+        <span className="min-w-0 break-words text-zinc-200">{order.customerName || 'Клієнт'}</span>
+        {order.phoneNumber && <a href={`tel:${order.phoneNumber.replace(/[^+0-9]/g, '')}`} className="flex shrink-0 items-center gap-1.5 text-zinc-200 transition-colors hover:text-white"><Phone size={12}/>{order.phoneNumber}</a>}
       </div>
     </header>
 
@@ -441,10 +442,10 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
       {order.items.map((item, index) => {
         const suffix = item.sizeName && item.weight ? ` · ${item.sizeName} (${item.weight})` : '';
         const title = suffix && item.name.endsWith(suffix) ? item.name.slice(0, -suffix.length) : item.name;
-        return <div key={index} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3">
-          <div className="flex items-start gap-2.5">
-            <span className="flex h-9 min-w-[36px] shrink-0 items-center justify-center rounded-lg border border-zinc-700/60 bg-zinc-800/70 px-1.5 text-base font-semibold leading-none text-zinc-100 tabular-nums">{item.qty}<span className="ml-0.5 text-xs font-normal text-zinc-500">×</span></span>
-            <div className="min-w-0"><p className="text-base font-semibold leading-6 text-zinc-100">{title}</p>
+        return <div key={index} className="rounded-2xl bg-zinc-800/75 p-3.5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 min-w-12 shrink-0 items-center justify-center rounded-xl bg-cyan-400 px-2 text-[24px] font-bold leading-none text-zinc-950 tabular-nums">{item.qty}<span className="ml-0.5 text-lg font-semibold text-zinc-950">×</span></span>
+            <div className="min-w-0"><p className="text-lg font-bold leading-6 text-zinc-50">{title}</p>
               {item.sizeName && <p className="mt-0.5 text-[13px] leading-5 text-zinc-400">{item.sizeName}{item.weight ? ` · ${item.weight}` : ''}</p>}
             </div>
           </div>
@@ -459,9 +460,8 @@ function OrderCard({ order, currentTime, onAdvance, onReturn, onChangeTime, onCa
       })}
     </div>
 
-    <OrderExtras order={order}/>
-    <div className="mt-3 border-t border-zinc-800 pt-3">
-      <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`min-h-[44px] w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'bg-blue-600 hover:bg-blue-500' : order.status === 'cooking' ? 'bg-orange-500 hover:bg-orange-400' : 'bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>
+    <div className="mt-4">
+      <button disabled={busy} onClick={() => onAdvance(order.id, order.status)} className={`flex min-h-[50px] w-full items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-bold transition-colors disabled:opacity-50 ${order.status === 'new' ? 'border-blue-400/60 bg-blue-600 shadow-[0_4px_18px_rgba(37,99,235,0.25)] hover:bg-blue-500' : order.status === 'cooking' ? 'border-orange-300/40 bg-orange-500 hover:bg-orange-400' : 'border-emerald-400/40 bg-emerald-700 hover:bg-emerald-600'}`}>{order.status === 'new' && <Play size={17} fill="currentColor"/>}{order.status === 'new' ? 'Почати готувати' : order.status === 'cooking' ? 'Готово до видачі' : 'Видати клієнту'}</button>
       {['cooking', 'ready'].includes(order.status) && <button type="button" disabled={busy} onClick={() => onReturn(order.id, order.status)} className="mt-2 flex min-h-[40px] w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"><ArrowLeft size={14}/>{order.status === 'cooking' ? 'Повернути до нових' : 'Повернути до приготування'}</button>}
       {order.status === 'ready' && order.paymentStatus === 'cash_due' && <button type="button" disabled={busy} onClick={() => onNoShow(order.id)} className="mt-3 min-h-[40px] w-full rounded-xl border border-red-500/20 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/10 disabled:opacity-50">Клієнт не прийшов</button>}
     </div>

@@ -46,6 +46,17 @@ test('client reads only public menu/availability; tracking opens the bot without
       [{ cafeOpen: false, onBreak: true, point: { acceptingOrders: true } }, 'Зачинено'],
       [{ cafeOpen: false, onBreak: false, point: { acceptingOrders: true } }, 'Зачинено'],
     ]) assert.ok(renderToStaticMarkup(React.createElement(CafeStatus, { availability })).includes(label));
+    const workingWeek = Array.from({ length: 7 }, () => ({ closed: false, open: '10:00', close: '22:00' }));
+    const scheduled = { cafeOpen: false, withinWorkingHours: false, closed: false, openMinute: 600, timeZone: 'Europe/Kyiv', serverNow: Date.parse('2026-10-24T22:00:00+03:00'), point: { acceptingOrders: true, weeklyHours: workingWeek, exceptions: [] } };
+    const statusHtml = value => renderToStaticMarkup(React.createElement(CafeStatus, { availability: value }));
+    assert.ok(statusHtml(scheduled).includes('Сьогодні вже не працюємо. Приходьте завтра.'));
+    assert.ok(statusHtml({ ...scheduled, point: { ...scheduled.point, acceptingOrders: false } }).includes('Сьогодні не працюємо</p>'));
+    assert.ok(statusHtml({ ...scheduled, serverNow: Date.parse('2026-10-24T09:00:00+03:00') }).includes('Відчиняємося сьогодні о 10:00'));
+    const holidayTomorrow = { ...scheduled, point: { ...scheduled.point, exceptions: [{ date: '2026-10-25', closed: true }] } };
+    assert.ok(statusHtml(holidayTomorrow).includes('Чекаємо наступного робочого дня.'));
+    assert.ok(!statusHtml(holidayTomorrow).includes('Приходьте завтра'));
+    const closedSunday = workingWeek.map((day, index) => index === 6 ? { ...day, closed: true } : day);
+    assert.ok(!statusHtml({ ...scheduled, point: { ...scheduled.point, weeklyHours: closedSunday } }).includes('Приходьте завтра'));
     assert.match(html, /Відстежувати статус/);
     assert.ok(!html.includes('імітація'));
     assert.deepEqual(paths.sort(), ['/api/availability', '/api/menu']);

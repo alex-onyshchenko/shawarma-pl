@@ -12,7 +12,7 @@ import {
   VolumeX,
   Maximize2,
   Minimize2,
-  PlusCircle,
+  Plus,
   Pencil,
   Hourglass,
   Play,
@@ -166,7 +166,7 @@ export default function KitchenDisplayApp() {
     <div className="min-h-screen bg-zinc-950 text-white font-sans flex flex-col selection:bg-orange-500 selection:text-white select-none">
       {error && <div role="alert" className="bg-red-950 border border-red-700 text-red-200 p-4 flex justify-between gap-4"><span>{error}</span><button onClick={() => setError('')}>Закрити</button></div>}
       {/* Top Header Bar for Tablet KDS */}
-      <header className="bg-zinc-900 border-b border-zinc-800 px-5 py-3.5 flex flex-wrap gap-3 justify-between items-center shrink-0 z-10 shadow-md">
+      <header className="bg-zinc-900 border-b border-zinc-800 px-3 sm:px-5 py-3.5 flex flex-wrap gap-3 justify-between items-center shrink-0 z-10 shadow-md">
         {/* Left: Branding & Status */}
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
@@ -197,16 +197,17 @@ export default function KitchenDisplayApp() {
         )}
 
         {/* Right: Controls & Tablet Clock */}
-        <div className="flex items-center gap-3">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:gap-3">
           {/* Manual order */}
           <button
             onClick={() => setShowManualOrder(true)}
             disabled={!menu || busy}
-            className="disabled:opacity-50 flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+            className="disabled:opacity-50 flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white sm:w-auto sm:px-3.5 rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all"
+            aria-label="Створити замовлення"
             title="Створити замовлення вручну"
           >
-            <PlusCircle size={15} />
-            <span>Створити замовлення</span>
+            <Plus size={20} />
+            <span className="hidden sm:inline">Створити замовлення</span>
           </button>
 
           <button disabled={!availability || busy} onClick={() => runAction(() => orderSync.setAcceptingOrders(!manualOpen))} aria-label={manualOpen ? 'Зачинити кафе' : 'Відчинити кафе'} title={manualOpen ? 'Зачинити кафе' : 'Відчинити кафе'} className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors disabled:opacity-50 ${manualOpen ? 'border-red-700 text-red-300 hover:bg-red-500/10' : 'border-emerald-600 text-emerald-300 hover:bg-emerald-500/10'}`}>
@@ -234,16 +235,19 @@ export default function KitchenDisplayApp() {
           {/* Fullscreen (Kiosk Mode) */}
           <button
             onClick={toggleFullscreen}
-            className="p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-xl transition-all active:scale-95"
+            className="hidden sm:inline-flex p-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-xl transition-all active:scale-95"
             title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим Кіоску'}
           >
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
 
           {/* Digital Clock */}
-          <div className="bg-zinc-950 border border-zinc-800 px-3.5 py-1.5 rounded-xl font-mono text-lg font-black tracking-widest text-white shadow-inner flex items-center gap-1.5">
-            <Clock size={16} className="text-orange-400" />
-            <span>
+          <div className="ml-auto shrink-0 whitespace-nowrap bg-zinc-950 border border-zinc-800 px-2 sm:px-3.5 py-1.5 rounded-xl font-mono text-sm sm:text-lg font-black tracking-wide sm:tracking-widest text-white shadow-inner flex items-center gap-1.5">
+            <Clock size={16} className="text-orange-400 shrink-0" />
+            <span className="sm:hidden">
+              {currentTime.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            <span className="hidden sm:inline">
               {currentTime.toLocaleTimeString('uk-UA', {
                 timeZone: 'Europe/Kyiv',
                 hour: '2-digit',
